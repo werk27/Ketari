@@ -5,7 +5,7 @@ const User = require('../models/User');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
 const { HR_ROLES, EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
-const { PRIVATE_PATHS } = require('../config/paths');
+const { PRIVATE_PATHS, toPublicPath, toAbsolutePath } = require('../config/paths');
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
 
@@ -45,13 +45,14 @@ exports.updateMyEmployer = async (req, res) => {
         // Platform-controlled fields can never be self-assigned by an organization.
         // Verification evidence is included: an employer that could write its own
         // verificationDocuments or clear its own rejectionReason would be able to
-        // fake having been reviewed.
+        // fake having been reviewed. `logo` is set only by its upload route, so a
+        // crafted path cannot be stored here.
         const {
             status: _status, owner: _owner, slug: _slug,
             verifiedAt: _verifiedAt, verifiedBy: _verifiedBy,
             verificationDocuments: _docs, rejectionReason: _reason,
             reviewedAt: _reviewedAt, reviewedBy: _reviewedBy,
-            submittedForReviewAt: _submittedAt, ...updates
+            submittedForReviewAt: _submittedAt, logo: _logo, ...updates
         } = req.body;
 
         Object.assign(employer, updates);
@@ -431,6 +432,65 @@ exports.setEmployerStatus = async (req, res) => {
         await employer.save();
 
         res.status(200).json({ success: true, message: `Organization marked ${status}`, employer });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Upload the organization's logo
+// @route   POST /api/employers/me/logo
+// @access  Private (Employer owner)
+exports.uploadLogo = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'Please attach an image' });
+        }
+
+        const employer = await Employer.findById(req.employerId);
+        if (!employer) {
+            fs.unlink(req.file.path, () => {});
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        // Remove the previous file so replaced logos do not accumulate on disk.
+        if (employer.logo) {
+            const old = toAbsolutePath(employer.logo);
+            if (old && fs.existsSync(old)) fs.unlink(old, () => {});
+        }
+
+        // Unlike verification evidence, a logo is meant to be seen: candidates
+        // view it on published vacancies, so it belongs in the public uploads
+        // folder that express.static serves.
+        employer.logo = toPublicPath(req.file.path);
+        await employer.save();
+
+        res.status(200).json({ success: true, message: 'Logo updated', logo: employer.logo });
+    } catch (error) {
+        console.error(error);
+        if (req.file) fs.unlink(req.file.path, () => {});
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Remove the organization's logo
+// @route   DELETE /api/employers/me/logo
+// @access  Private (Employer owner)
+exports.deleteLogo = async (req, res) => {
+    try {
+        const employer = await Employer.findById(req.employerId);
+        if (!employer) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        if (employer.logo) {
+            const absolute = toAbsolutePath(employer.logo);
+            if (absolute && fs.existsSync(absolute)) fs.unlink(absolute, () => {});
+            employer.logo = null;
+            await employer.save();
+        }
+
+        res.status(200).json({ success: true, message: 'Logo removed' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });

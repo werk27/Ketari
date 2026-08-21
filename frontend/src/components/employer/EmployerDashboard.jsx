@@ -4,7 +4,7 @@ import {
     FaBriefcase, FaFileAlt, FaUserFriends, FaCheckCircle, FaBuilding, FaClock,
     FaUsers, FaCalendarAlt, FaClipboardList, FaGraduationCap, FaComments, FaPlus
 } from 'react-icons/fa';
-import api from '../../services/api';
+import api, { getImageUrl } from '../../services/api';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -69,7 +69,7 @@ const EmployerDashboard = () => {
                     <div className="d-flex align-items-center justify-content-center flex-shrink-0"
                          style={{ width: 56, height: 56, borderRadius: 14, background: '#EEF2FF', color: '#4F46E5' }}>
                         {org?.logo
-                            ? <img src={org.logo} alt="" style={{ width: '100%', height: '100%', borderRadius: 14, objectFit: 'cover' }} />
+                            ? <img src={getImageUrl(org.logo)} alt="" style={{ width: '100%', height: '100%', borderRadius: 14, objectFit: 'cover' }} />
                             : <FaBuilding size={22} />}
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>

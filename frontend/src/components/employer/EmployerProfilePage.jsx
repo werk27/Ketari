@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Form, Button, Row, Col } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import api from '../../services/api';
+import { FaBuilding, FaCamera, FaTrash } from 'react-icons/fa';
+import api, { getImageUrl } from '../../services/api';
 import { Card, SectionHeader, StatusBadge, LoadingState, ErrorState } from '../workspace/ui';
+
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 /**
  * Organization profile.
@@ -15,9 +18,12 @@ import { Card, SectionHeader, StatusBadge, LoadingState, ErrorState } from '../w
 const EmployerProfilePage = () => {
     const [form, setForm] = useState(null);
     const [status, setStatus] = useState('');
+    const [logo, setLogo] = useState(null);
+    const [logoBusy, setLogoBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [saving, setSaving] = useState(false);
+    const fileInput = useRef(null);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -26,6 +32,7 @@ const EmployerProfilePage = () => {
             const res = await api.get('/employers/me');
             const employer = res.data.employer || {};
             setStatus(employer.status);
+            setLogo(employer.logo || null);
             setForm({
                 name: employer.name || '',
                 legalName: employer.legalName || '',
@@ -72,6 +79,47 @@ const EmployerProfilePage = () => {
         }
     };
 
+    const pickLogo = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        // Checked here as well as on the server so the browser does not spend
+        // time uploading a file that would only be rejected.
+        if (file.size > MAX_LOGO_BYTES) {
+            toast.error('That image is larger than 2MB. Choose a smaller file.');
+            event.target.value = '';
+            return;
+        }
+
+        setLogoBusy(true);
+        const body = new FormData();
+        body.append('logo', file);
+        try {
+            const res = await api.post('/employers/me/logo', body,
+                { headers: { 'Content-Type': 'multipart/form-data' } });
+            setLogo(res.data.logo);
+            toast.success('Logo updated');
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not upload the logo');
+        } finally {
+            setLogoBusy(false);
+            event.target.value = '';
+        }
+    };
+
+    const removeLogo = async () => {
+        setLogoBusy(true);
+        try {
+            await api.delete('/employers/me/logo');
+            setLogo(null);
+            toast.success('Logo removed');
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not remove the logo');
+        } finally {
+            setLogoBusy(false);
+        }
+    };
+
     if (loading) return <LoadingState label="Loading organization profile…" />;
     if (error) return <ErrorState message={error} onRetry={load} />;
 
@@ -86,6 +134,40 @@ const EmployerProfilePage = () => {
                 description="This information is shown to candidates on your published vacancies."
                 action={<StatusBadge status={status} />}
             />
+
+            {/* Logo */}
+            <div className="d-flex align-items-center gap-3 mb-4 p-3 rounded"
+                 style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                <div className="d-flex align-items-center justify-content-center flex-shrink-0 overflow-hidden"
+                     style={{ width: 84, height: 84, borderRadius: 16, background: '#EEF2FF', color: '#4F46E5' }}>
+                    {logo
+                        ? <img src={getImageUrl(logo)} alt="Organization logo"
+                               style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <FaBuilding size={30} />}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                    <div className="fw-semibold text-dark" style={{ fontSize: '0.88rem' }}>Organization logo</div>
+                    <div className="text-muted mb-2" style={{ fontSize: '0.76rem' }}>
+                        Shown next to your vacancies. JPEG, PNG, WebP or SVG, up to 2MB.
+                        A square image works best.
+                    </div>
+                    <div className="d-flex gap-2 flex-wrap">
+                        <Button size="sm" variant="outline-primary" disabled={logoBusy}
+                                onClick={() => fileInput.current?.click()}>
+                            <FaCamera className="me-2" size={12} />
+                            {logoBusy ? 'Working…' : (logo ? 'Replace' : 'Upload logo')}
+                        </Button>
+                        {logo && (
+                            <Button size="sm" variant="outline-danger" disabled={logoBusy} onClick={removeLogo}>
+                                <FaTrash className="me-2" size={12} />Remove
+                            </Button>
+                        )}
+                    </div>
+                    <input ref={fileInput} type="file" className="d-none"
+                           accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                           onChange={pickLogo} />
+                </div>
+            </div>
 
             <Form onSubmit={save}>
                 <Row className="g-3">

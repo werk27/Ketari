@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { FaBars, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
+import { getImageUrl } from '../../services/api';
 import { getNavigation, ROLE_LABELS } from './navigationConfig';
 
 const T = {
@@ -67,7 +68,7 @@ const WorkspaceLayout = () => {
                     color: '#0F172A', fontWeight: 700, fontSize: '1.1rem', flexShrink: 0
                 }}>
                     {organization?.logo
-                        ? <img src={organization.logo} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                        ? <img src={getImageUrl(organization.logo)} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
                         : '🏛️'}
                 </div>
                 <div style={{ minWidth: 0 }}>

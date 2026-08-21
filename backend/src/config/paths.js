@@ -31,6 +31,7 @@ const PRIVATE_ROOT = path.join(__dirname, '..', '..', 'private-uploads');
 const UPLOAD_PATHS = {
     root: UPLOADS_ROOT,
     profiles: path.join(UPLOADS_ROOT, 'profiles'),
+    logos: path.join(UPLOADS_ROOT, 'logos'),
     resumes: path.join(UPLOADS_ROOT, 'resumes'),
     documents: path.join(UPLOADS_ROOT, 'documents')
 };
