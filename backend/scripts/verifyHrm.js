@@ -34,9 +34,9 @@ const login = async (email, password) => {
 const run = async () => {
     console.log('\n=== HR module verification (Stages 2-4) ===\n');
 
-    const expert = await login('hr.expert@ketari.et', 'Expert@123');
-    const manager = await login('hr.manager@ketari.et', 'Manager@123');
-    const admin = await login('admin@recruitai.com', 'Admin123!');
+    const expert = await login('hr.expert@ketari.et', process.env.SELFTEST_HR_PASSWORD || 'Expert@123');
+    const manager = await login('hr.manager@ketari.et', process.env.SELFTEST_HRM_PASSWORD || process.env.SELFTEST_HR_PASSWORD || 'Manager@123');
+    const admin = await login('admin@recruitai.com', process.env.SELFTEST_ADMIN_PASSWORD || 'Admin123!');
 
     console.log('[Role separation - System Administrator]');
     for (const [label, path] of [

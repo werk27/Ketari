@@ -38,7 +38,7 @@ const run = async () => {
     const anon = await call('GET', '/candidates');
     record('Anonymous CANNOT list candidates', anon.status === 401, `status ${anon.status}`);
 
-    const expertToken = await login('hr.expert@ketari.et', 'Expert@123');
+    const expertToken = await login('hr.expert@ketari.et', process.env.SELFTEST_HR_PASSWORD || 'Expert@123');
     const hrView = await call('GET', '/candidates?limit=5', { token: expertToken });
     record('HR Expert CAN list candidates', hrView.status === 200,
         `${hrView.data?.totalCandidates ?? 0} candidate(s)`);
@@ -52,7 +52,7 @@ const run = async () => {
     record('Saved jobs not exposed in talent search',
         !sample || !(sample.profile && 'savedJobs' in sample.profile));
 
-    const adminToken = await login('admin@recruitai.com', 'Admin123!');
+    const adminToken = await login('admin@recruitai.com', process.env.SELFTEST_ADMIN_PASSWORD || 'Admin123!');
     const adminView = await call('GET', '/candidates', { token: adminToken });
     record('System Administrator CANNOT browse the talent pool', adminView.status === 403,
         `status ${adminView.status}`);

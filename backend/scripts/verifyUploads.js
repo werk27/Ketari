@@ -27,7 +27,7 @@ const run = async () => {
     const loginRes = await fetch(`${API}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'hr.expert@ketari.et', password: 'Expert@123' })
+        body: JSON.stringify({ email: 'hr.expert@ketari.et', password: process.env.SELFTEST_HR_PASSWORD || 'Expert@123' })
     });
     const loginData = await loginRes.json();
     if (!loginData.token) throw new Error(`Login failed: ${loginData.message}`);

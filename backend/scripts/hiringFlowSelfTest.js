@@ -207,9 +207,16 @@ const cleanup = async () => {
     const onboarding = decision.data.onboarding;
     check('Employee record created for onboarding', !!onboarding?.employeeId && !onboarding?.error, onboarding);
 
-    // ---- The hired candidate becomes an employee ----------------------------------
+    // ---- The hire does not by itself grant the employee workspace -------------------
+    // The role changes only when the person follows their activation link, so a
+    // candidate who is signed in is not moved into a different workspace by a
+    // decision someone else just made. See authController.activateEmployee and
+    // scripts/hiringActivationSelfTest.js for the activation half.
     const me = await call('GET', '/auth/me', { token: candidateToken });
-    check('Hired candidate is now role "employee"', me.data.user?.role === 'employee', me.data.user?.role);
+    check('Hired candidate stays a candidate until they activate',
+        me.data.user?.role === 'candidate', me.data.user?.role);
+    check('The hire reports that activation is still pending',
+        onboarding?.accountActivationPending === true, onboarding);
 
     const employeeCount = await db.collection('employees').countDocuments({ user: candidateId });
     check('Exactly one employee record exists', employeeCount === 1, employeeCount);

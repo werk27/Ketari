@@ -36,12 +36,12 @@ const run = async () => {
     console.log('\n=== Recruitment workflow verification ===\n');
 
     console.log('[Authentication]');
-    const expert = await login('hr.expert@ketari.et', 'Expert@123');
+    const expert = await login('hr.expert@ketari.et', process.env.SELFTEST_HR_PASSWORD || 'Expert@123');
     record('HR Expert can sign in', !!expert.token);
     record('HR Expert is linked to an organization', !!expert.user.employer,
         expert.user.employer ? `org ${expert.user.employer}` : 'no organization');
 
-    const manager = await login('hr.manager@ketari.et', 'Manager@123');
+    const manager = await login('hr.manager@ketari.et', process.env.SELFTEST_HRM_PASSWORD || process.env.SELFTEST_HR_PASSWORD || 'Manager@123');
     record('HR Manager can sign in', !!manager.token);
     record('HR Expert and HR Manager share an organization',
         String(expert.user.employer) === String(manager.user.employer));
