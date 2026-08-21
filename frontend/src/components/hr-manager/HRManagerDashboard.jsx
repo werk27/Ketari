@@ -6,18 +6,9 @@ import {
     FaClipboardCheck, FaBriefcase, FaFileAlt, FaUserFriends, FaCheck, FaTimes
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
-import hrmBackdrop from '../../assets/hrm.jpg';
-import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
-
-/* Same treatment as the employer dashboard: the photograph is darkened from the
-   left so the headline stays legible, then faded into the page background. */
-const HERO_BACKGROUND =
-    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
-     linear-gradient(to bottom, rgba(8,15,31,0.15) 0%, rgba(8,15,31,0) 40%, rgba(8,15,31,0.55) 74%, #080F1F 100%),
-     url(${hrmBackdrop})`;
 
 /**
  * HR Manager dashboard.
@@ -95,8 +86,8 @@ const HRManagerDashboard = () => {
     const applications = overview?.applications;
 
     return (
-        <div className="hero-dash">
-            <section className="dash-hero" style={{ backgroundImage: HERO_BACKGROUND }}>
+        <div>
+            <section className="dash-hero">
                 <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
                     <div style={{ minWidth: 0, flex: '1 1 320px' }}>
                         <div className="d-flex align-items-center gap-3 mb-2">

@@ -188,10 +188,10 @@ const EmployerVerification = () => {
             )}
 
             {/* What is still outstanding */}
-            <div className="mb-4 p-3 rounded" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+            <div className="mb-4 p-3 rounded muted-panel" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                 <h6 className="fw-bold text-dark mb-2" style={{ fontSize: '0.86rem' }}>Checklist</h6>
                 {checklist.map(item => (
-                    <div key={item.key} className="d-flex align-items-start gap-2 py-1"
+                    <div key={item.key} className="d-flex align-items-start gap-2 py-1 muted-row"
                          style={{ fontSize: '0.79rem', borderBottom: '1px solid #F1F5F9' }}>
                         <span style={{ color: item.met ? '#16A34A' : '#DC2626', minWidth: 16 }}>
                             {item.met ? <FaCheck size={11} /> : <FaTimes size={11} />}

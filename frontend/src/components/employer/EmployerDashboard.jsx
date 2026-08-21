@@ -5,8 +5,6 @@ import {
     FaUsers, FaCalendarAlt, FaClipboardList, FaGraduationCap, FaComments, FaPlus
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
-import hrmBackdrop from '../../assets/hrm.jpg';
-import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -64,16 +62,11 @@ const EmployerDashboard = () => {
         + (training?.pendingApproval || 0) + (vacancies?.pendingApproval || 0);
 
     return (
-        <div className="hero-dash">
-            {/* Hero: the photograph runs the full width of the workspace and the
-                headline statistics sit over its lower edge, so a dark gradient
-                fades it into the page background rather than ending abruptly. */}
-            <section className="dash-hero" style={{
-                backgroundImage:
-                    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
-                     linear-gradient(to bottom, rgba(8,15,31,0.15) 0%, rgba(8,15,31,0) 40%, rgba(8,15,31,0.55) 74%, #080F1F 100%),
-                     url(${hrmBackdrop})`
-            }}>
+        <div>
+            {/* The workspace shell paints the photograph across the top of the
+                page, so the hero only carries the headline and leaves room for
+                the statistics to overlap the lower edge of the band. */}
+            <section className="dash-hero">
                 <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
                     <div style={{ minWidth: 0, flex: '1 1 320px' }}>
                         <div className="d-flex align-items-center gap-3 mb-2">
@@ -257,7 +250,7 @@ const EmployerDashboard = () => {
                                                 <span className="text-muted">{label}</span>
                                                 <span className="fw-semibold text-dark">{value}</span>
                                             </div>
-                                            <div style={{ height: 6, background: '#F1F5F9', borderRadius: 999 }}>
+                                            <div className="rail" style={{ height: 6, background: '#F1F5F9', borderRadius: 999 }}>
                                                 <div style={{ width: `${pct}%`, height: '100%', background: '#4F46E5', borderRadius: 999 }} />
                                             </div>
                                         </div>
@@ -320,7 +313,7 @@ const EmployerDashboard = () => {
                         const Icon = action.icon;
                         return (
                             <Link key={action.to} to={action.to}
-                                  className="btn btn-light d-flex align-items-center gap-2 border-0 text-dark fw-semibold"
+                                  className="btn btn-light d-flex align-items-center gap-2 border-0 text-dark fw-semibold soft-tile"
                                   style={{ background: '#F8FAFC', borderRadius: 10, fontSize: '0.82rem', padding: '10px 16px' }}>
                                 <Icon size={14} className="text-primary" />
                                 {action.label}

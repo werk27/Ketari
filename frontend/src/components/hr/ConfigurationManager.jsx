@@ -165,7 +165,7 @@ const ConfigurationManager = () => {
             </Card>
 
             {activeGroup?.description && (
-                <div className="d-flex align-items-start gap-2 mb-3 p-2 rounded"
+                <div className="d-flex align-items-start gap-2 mb-3 p-2 rounded info-note"
                      style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
                     <FaInfoCircle className="text-primary flex-shrink-0 mt-1" size={13} />
                     <div className="text-dark" style={{ fontSize: '0.8rem' }}>{activeGroup.description}</div>
@@ -217,7 +217,7 @@ const ConfigurationManager = () => {
                                     <div className="d-flex flex-wrap gap-2">
                                         {items.map(item => (
                                             <span key={item._id}
-                                                  className="d-inline-flex align-items-center gap-2"
+                                                  className="d-inline-flex align-items-center gap-2 soft-chip"
                                                   style={{
                                                       background: '#F1F5F9', borderRadius: 999,
                                                       padding: '4px 10px', fontSize: '0.78rem'

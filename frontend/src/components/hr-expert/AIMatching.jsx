@@ -99,7 +99,7 @@ const AIMatching = () => {
                     </div>
                 </div>
                 {result?.disclaimer && (
-                    <div className="d-flex align-items-start gap-2 mt-3 p-2 rounded"
+                    <div className="d-flex align-items-start gap-2 mt-3 p-2 rounded info-note"
                          style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
                         <FaInfoCircle className="text-primary flex-shrink-0 mt-1" size={13} />
                         <div className="text-dark" style={{ fontSize: '0.78rem' }}>{result.disclaimer}</div>

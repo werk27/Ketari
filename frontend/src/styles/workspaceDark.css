@@ -1,0 +1,425 @@
+/**
+ * Dark photographic presentation for the organization-side workspaces:
+ * Employer, HR Manager and HR Expert.
+ *
+ * WorkspaceLayout adds .dark-workspace to the content column for those roles
+ * only, so every module inside them - dashboards, vacancies, applications,
+ * leave, directory, configuration - shares one surface. Everything is scoped
+ * under that class on purpose: Card, StatCard, tables and forms are shared with
+ * the candidate, employee and admin workspaces, which must stay light.
+ *
+ * Bootstrap utilities carry !important, and several screens still set light
+ * colours inline, so the overrides below restate !important where they have to
+ * win rather than restyling the shared components at the source.
+ */
+
+/* ---------- shell ---------- */
+.dark-workspace {
+    background-color: #080F1F;
+}
+
+.dark-workspace .workspace-header {
+    background: rgba(8, 15, 31, 0.82) !important;
+    border-color: rgba(148, 163, 184, 0.16) !important;
+    box-shadow: none !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* The photograph is a band across the top of the scrolling region; it is a
+   layer of its own so the picture can be cropped rather than stretched. */
+.dark-workspace .workspace-main {
+    position: relative;
+    background-color: #080F1F;
+}
+
+.dark-workspace .workspace-band {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 320px;
+    background-size: cover;
+    background-position: center 22%;
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+
+@media (min-width: 768px) {
+    .dark-workspace .workspace-band {
+        height: 420px;
+    }
+}
+
+.dark-workspace .workspace-content {
+    position: relative;
+    z-index: 1;
+}
+
+/* ---------- dashboard hero ---------- */
+.dark-workspace .dash-hero {
+    padding: 1.25rem 0 5.5rem;
+}
+
+@media (min-width: 768px) {
+    .dark-workspace .dash-hero {
+        padding: 2rem 0 6.5rem;
+    }
+}
+
+.dark-workspace .dash-hero h1 {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.65rem;
+    margin-bottom: 0.35rem;
+}
+
+.dark-workspace .hero-sub {
+    color: rgba(226, 232, 240, 0.82);
+    font-size: 0.9rem;
+}
+
+/* Logo / role emblem sitting beside the hero headline. */
+.dark-workspace .hero-badge {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.dark-workspace .hero-badge img {
+    width: 100%;
+    height: 100%;
+    border-radius: 14px;
+    object-fit: cover;
+}
+
+/* Headline statistics are lifted over the lower edge of the photograph, which
+   is why the hero carries so much bottom padding. */
+.dark-workspace .hero-overlap {
+    margin-top: -4.5rem;
+    position: relative;
+    z-index: 2;
+}
+
+/* ---------- surfaces ---------- */
+.dark-workspace .bg-white,
+.dark-workspace .card,
+.dark-workspace .bg-light,
+.dark-workspace .list-group-item,
+.dark-workspace .accordion-item,
+.dark-workspace .accordion-button {
+    background: rgba(18, 30, 56, 0.82) !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+    color: #E2E8F0;
+}
+
+.dark-workspace .bg-white,
+.dark-workspace .card {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.dark-workspace .card-header,
+.dark-workspace .card-footer,
+.dark-workspace .modal-content {
+    background: rgba(15, 25, 48, 0.9) !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+    color: #E2E8F0;
+}
+
+.dark-workspace .border,
+.dark-workspace .border-top,
+.dark-workspace .border-bottom,
+.dark-workspace .border-start,
+.dark-workspace .border-end {
+    border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+/* Bordered list rows that would otherwise carry the pale hairline drawn for
+   the light workspaces. */
+.dark-workspace .row-line {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 25, 48, 0.55);
+}
+
+/* Progress rails inside the application breakdown. */
+.dark-workspace .rail {
+    background: rgba(148, 163, 184, 0.18) !important;
+}
+
+/* ---------- type ---------- */
+.dark-workspace .text-dark,
+.dark-workspace .text-body,
+.dark-workspace .text-secondary,
+.dark-workspace .text-black {
+    color: #F1F5F9 !important;
+}
+
+.dark-workspace .text-muted {
+    color: rgba(148, 163, 184, 0.85) !important;
+}
+
+.dark-workspace h1,
+.dark-workspace h2,
+.dark-workspace h3,
+.dark-workspace h4,
+.dark-workspace h5,
+.dark-workspace h6,
+.dark-workspace label,
+.dark-workspace .form-label,
+.dark-workspace dt {
+    color: #F1F5F9;
+}
+
+.dark-workspace a:not(.btn) {
+    color: #93C5FD;
+}
+
+.dark-workspace a:not(.btn):hover {
+    color: #BFDBFE;
+}
+
+/* Tinted notices keep their own light background, so text inside them must not
+   be flipped to the dark-surface colours. */
+.dark-workspace .alert .text-dark,
+.dark-workspace .alert .text-muted,
+.dark-workspace .badge .text-dark,
+.dark-workspace .badge .text-muted {
+    color: inherit !important;
+}
+
+.dark-workspace hr {
+    border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* ---------- tables ---------- */
+.dark-workspace .table {
+    --bs-table-color: #E2E8F0;
+    --bs-table-bg: transparent;
+    --bs-table-border-color: rgba(148, 163, 184, 0.18);
+    --bs-table-striped-color: #E2E8F0;
+    --bs-table-striped-bg: rgba(148, 163, 184, 0.06);
+    --bs-table-hover-color: #FFFFFF;
+    --bs-table-hover-bg: rgba(148, 163, 184, 0.10);
+    color: #E2E8F0;
+}
+
+.dark-workspace .table > :not(caption) > * > * {
+    background-color: transparent;
+}
+
+.dark-workspace .table thead tr,
+.dark-workspace .table thead th {
+    color: rgba(148, 163, 184, 0.9) !important;
+    background-color: transparent !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+/* ---------- forms ---------- */
+.dark-workspace .form-control,
+.dark-workspace .form-select,
+.dark-workspace .input-group-text {
+    background: rgba(10, 18, 36, 0.75) !important;
+    border-color: rgba(148, 163, 184, 0.25) !important;
+    color: #E2E8F0 !important;
+}
+
+.dark-workspace .form-control::placeholder {
+    color: rgba(148, 163, 184, 0.7);
+}
+
+.dark-workspace .form-control:focus,
+.dark-workspace .form-select:focus {
+    border-color: #6366F1 !important;
+    box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.25);
+}
+
+.dark-workspace .form-control:disabled,
+.dark-workspace .form-select:disabled {
+    background: rgba(148, 163, 184, 0.10) !important;
+    color: rgba(226, 232, 240, 0.6) !important;
+}
+
+.dark-workspace .form-check-input {
+    background-color: rgba(10, 18, 36, 0.75);
+    border-color: rgba(148, 163, 184, 0.35);
+}
+
+.dark-workspace .form-check-input:checked {
+    background-color: #4F46E5;
+    border-color: #4F46E5;
+}
+
+.dark-workspace .form-text {
+    color: rgba(148, 163, 184, 0.85);
+}
+
+/* ---------- controls ---------- */
+.dark-workspace .btn-light {
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.2);
+    color: #E2E8F0;
+}
+
+.dark-workspace .btn-light:hover {
+    background: rgba(148, 163, 184, 0.22);
+    color: #fff;
+}
+
+.dark-workspace .btn-outline-secondary {
+    color: #CBD5E1;
+    border-color: rgba(148, 163, 184, 0.35);
+}
+
+.dark-workspace .btn-outline-secondary:hover {
+    background: rgba(148, 163, 184, 0.18);
+    border-color: rgba(148, 163, 184, 0.5);
+    color: #fff;
+}
+
+.dark-workspace .btn-outline-primary {
+    color: #A5B4FC;
+    border-color: rgba(129, 140, 248, 0.5);
+}
+
+.dark-workspace .btn-outline-primary:hover {
+    background: rgba(99, 102, 241, 0.22);
+    color: #fff;
+}
+
+.dark-workspace .btn-outline-danger {
+    color: #FCA5A5;
+    border-color: rgba(248, 113, 113, 0.45);
+}
+
+.dark-workspace .btn-outline-danger:hover {
+    background: rgba(220, 38, 38, 0.25);
+    color: #fff;
+}
+
+.dark-workspace .btn-outline-success {
+    color: #86EFAC;
+    border-color: rgba(74, 222, 128, 0.45);
+}
+
+.dark-workspace .btn-outline-success:hover {
+    background: rgba(22, 163, 74, 0.28);
+    color: #fff;
+}
+
+.dark-workspace .nav-tabs {
+    border-bottom-color: rgba(148, 163, 184, 0.18);
+}
+
+.dark-workspace .nav-tabs .nav-link {
+    color: rgba(203, 213, 225, 0.75);
+}
+
+.dark-workspace .nav-tabs .nav-link:hover {
+    border-color: transparent transparent rgba(148, 163, 184, 0.35);
+    color: #fff;
+}
+
+.dark-workspace .nav-tabs .nav-link.active {
+    background: rgba(18, 30, 56, 0.9);
+    border-color: rgba(148, 163, 184, 0.25) rgba(148, 163, 184, 0.25) transparent;
+    color: #fff;
+}
+
+.dark-workspace .dropdown-menu {
+    background: #0F1B33;
+    border-color: rgba(148, 163, 184, 0.2);
+}
+
+.dark-workspace .dropdown-item {
+    color: #E2E8F0;
+}
+
+.dark-workspace .dropdown-item:hover,
+.dark-workspace .dropdown-item:focus {
+    background: rgba(148, 163, 184, 0.14);
+    color: #fff;
+}
+
+.dark-workspace .page-link {
+    background: rgba(18, 30, 56, 0.82);
+    border-color: rgba(148, 163, 184, 0.18);
+    color: #CBD5E1;
+}
+
+.dark-workspace .page-item.active .page-link {
+    background: #4F46E5;
+    border-color: #4F46E5;
+    color: #fff;
+}
+
+.dark-workspace .progress {
+    background: rgba(148, 163, 184, 0.18);
+}
+
+/* ---------- tinted panels ---------- */
+/* These carry light inline colours so the candidate, employee and admin
+   workspaces keep them; inside the dark shell they are restated as tints. */
+.dark-workspace .info-note {
+    background: rgba(99, 102, 241, 0.16) !important;
+    border-color: rgba(165, 180, 252, 0.38) !important;
+}
+
+.dark-workspace .danger-note {
+    background: rgba(153, 27, 27, 0.22) !important;
+    border-color: rgba(252, 165, 165, 0.45) !important;
+}
+
+.dark-workspace .muted-panel {
+    background: rgba(15, 25, 48, 0.7) !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+.dark-workspace .muted-row {
+    border-bottom-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+.dark-workspace .soft-chip,
+.dark-workspace .soft-tile {
+    background: rgba(148, 163, 184, 0.14) !important;
+}
+
+.dark-workspace .soft-tile:hover {
+    background: rgba(148, 163, 184, 0.24) !important;
+}
+
+.dark-workspace .tint-tile {
+    background: rgba(99, 102, 241, 0.20) !important;
+    color: #C7D2FE !important;
+}
+
+.dark-workspace .empty-icon {
+    background: rgba(148, 163, 184, 0.14) !important;
+    color: rgba(203, 213, 225, 0.9) !important;
+}
+
+/* ---------- talent directory ---------- */
+.dark-workspace .candidate-card {
+    border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+.dark-workspace .candidate-card:hover {
+    border-color: rgba(129, 140, 248, 0.45) !important;
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.35) !important;
+}
+
+.dark-workspace .skill-pill-sm {
+    background-color: rgba(148, 163, 184, 0.16);
+    color: #CBD5E1;
+}
+
+.dark-workspace .skill-pill-sm:hover {
+    background-color: rgba(148, 163, 184, 0.26);
+}

@@ -4,6 +4,8 @@ import { FaBars, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { getImageUrl } from '../../services/api';
 import { getNavigation, ROLE_LABELS } from './navigationConfig';
+import hrmBackdrop from '../../assets/hrm.jpg';
+import '../../styles/workspaceDark.css';
 
 const T = {
     primary: '#4F46E5',
@@ -12,6 +14,20 @@ const T = {
     border: '#E2E8F0',
     font: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 };
+
+/**
+ * Roles that represent the organization rather than an individual. They share
+ * the dark photographic workspace so an HR Expert, an HR Manager and the
+ * Employer recognise the same product while working in different modules.
+ */
+const DARK_ROLES = ['employer', 'hr_manager', 'hr_expert'];
+
+/* The photograph is darkened from the left so headings stay legible over it,
+   then faded into the workspace colour at the bottom of the band. */
+const WORKSPACE_BACKDROP =
+    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
+     linear-gradient(to bottom, rgba(8,15,31,0.12) 0%, rgba(8,15,31,0) 38%, rgba(8,15,31,0.60) 72%, #080F1F 100%),
+     url(${hrmBackdrop})`;
 
 /**
  * Shared application shell for every authenticated role.
@@ -35,6 +51,7 @@ const WorkspaceLayout = () => {
 
     const pageTitle = current ? current.label : nav.title;
     const initials = (user?.name || '?').trim().charAt(0).toUpperCase();
+    const dark = DARK_ROLES.includes(user?.role);
 
     const linkStyle = ({ isActive }) => ({
         color: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.55)',
@@ -129,8 +146,8 @@ const WorkspaceLayout = () => {
                 </div>
             )}
 
-            <div className="flex-grow-1 d-flex flex-column" style={{ minWidth: 0 }}>
-                <header className="bg-white border-bottom d-flex align-items-center justify-content-between px-3 px-md-4"
+            <div className={`flex-grow-1 d-flex flex-column${dark ? ' dark-workspace' : ''}`} style={{ minWidth: 0 }}>
+                <header className="workspace-header bg-white border-bottom d-flex align-items-center justify-content-between px-3 px-md-4"
                         style={{ height: '62px', flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
                     <div className="d-flex align-items-center gap-3" style={{ minWidth: 0 }}>
                         <button className="btn btn-link text-dark p-0 border-0 d-lg-none"
@@ -177,8 +194,14 @@ const WorkspaceLayout = () => {
                     </div>
                 </header>
 
-                <main className="flex-grow-1 p-3 p-md-4" style={{ overflowY: 'auto' }}>
-                    <Outlet />
+                <main className="workspace-main flex-grow-1 p-3 p-md-4" style={{ overflowY: 'auto' }}>
+                    {dark && (
+                        <div className="workspace-band" aria-hidden="true"
+                             style={{ backgroundImage: WORKSPACE_BACKDROP }} />
+                    )}
+                    <div className="workspace-content">
+                        <Outlet />
+                    </div>
                 </main>
             </div>
         </div>

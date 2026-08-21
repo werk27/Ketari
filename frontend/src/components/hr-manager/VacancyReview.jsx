@@ -129,7 +129,7 @@ const VacancyReview = () => {
                 </div>
 
                 {job.status === 'rejected' && job.rejectionReason && (
-                    <div className="mt-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FECACA' }}>
+                    <div className="mt-3 p-2 rounded danger-note" style={{ background: '#FEF2F2', border: '1px solid #FECACA' }}>
                         <div className="fw-semibold text-danger" style={{ fontSize: '0.8rem' }}>Returned for correction</div>
                         <div className="text-dark" style={{ fontSize: '0.82rem' }}>{job.rejectionReason}</div>
                     </div>

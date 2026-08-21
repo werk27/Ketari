@@ -127,7 +127,7 @@ export const LoadingState = ({ label = 'Loading…' }) => (
 export const EmptyState = ({ icon: Icon, title, description, action }) => (
     <div className="text-center py-5 px-3">
         {Icon && (
-            <div className="d-inline-flex align-items-center justify-content-center mb-3"
+            <div className="d-inline-flex align-items-center justify-content-center mb-3 empty-icon"
                  style={{ width: 56, height: 56, borderRadius: '50%', background: '#F1F5F9', color: TOKENS.muted }}>
                 <Icon size={22} />
             </div>
