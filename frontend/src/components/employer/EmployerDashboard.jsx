@@ -5,6 +5,8 @@ import {
     FaUsers, FaCalendarAlt, FaClipboardList, FaGraduationCap, FaComments, FaPlus
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
+import hrmBackdrop from '../../assets/hrm.jpg';
+import '../../styles/employerDashboard.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -62,83 +64,110 @@ const EmployerDashboard = () => {
         + (training?.pendingApproval || 0) + (vacancies?.pendingApproval || 0);
 
     return (
-        <div>
-            {/* Organization header */}
-            <Card className="p-3 mb-4">
-                <div className="d-flex align-items-center gap-3 flex-wrap">
-                    <div className="d-flex align-items-center justify-content-center flex-shrink-0"
-                         style={{ width: 56, height: 56, borderRadius: 14, background: '#EEF2FF', color: '#4F46E5' }}>
-                        {org?.logo
-                            ? <img src={getImageUrl(org.logo)} alt="" style={{ width: '100%', height: '100%', borderRadius: 14, objectFit: 'cover' }} />
-                            : <FaBuilding size={22} />}
-                    </div>
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                        <div className="d-flex align-items-center gap-2 flex-wrap">
-                            <h5 className="fw-bold text-dark mb-0">{org?.name || 'Your Organization'}</h5>
-                            <StatusBadge status={org?.status} />
-                        </div>
-                        <div className="text-muted" style={{ fontSize: '0.82rem' }}>
-                            {org?.industry || 'Industry not set'}
-                            {' · '}{structure?.departments || 0} department(s)
-                            {' · '}{structure?.positions || 0} position(s)
-                        </div>
-                    </div>
-                    <Link to="/employer/profile" className="btn btn-sm btn-outline-primary">Edit organization</Link>
-                </div>
-                {org?.status === 'pending' && (
-                    <div className="mt-3 p-2 rounded" style={{ background: '#FFFBEB', border: '1px solid #FCD34D' }}>
-                        <div className="text-dark" style={{ fontSize: '0.8rem' }}>
-                            <strong>Awaiting verification.</strong> The System Administrator has not approved
-                            your organization yet, so you cannot publish vacancies or add HR team members.{' '}
-                            <Link to="/employer/verification">Complete your application</Link>.
-                        </div>
-                    </div>
-                )}
-                {org?.status === 'rejected' && (
-                    <div className="mt-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}>
-                        <div className="text-dark" style={{ fontSize: '0.8rem' }}>
-                            <strong>Verification was not approved.</strong>
-                            {org.rejectionReason && (
-                                <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>
-                            )}
-                            <div className="mt-1">
-                                <Link to="/employer/verification">Correct your application and resubmit</Link>.
+        <div className="employer-dash">
+            {/* Hero: the photograph runs the full width of the workspace and the
+                headline statistics sit over its lower edge, so a dark gradient
+                fades it into the page background rather than ending abruptly. */}
+            <section className="employer-hero" style={{
+                backgroundImage:
+                    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
+                     linear-gradient(to bottom, rgba(8,15,31,0.15) 0%, rgba(8,15,31,0) 40%, rgba(8,15,31,0.55) 74%, #080F1F 100%),
+                     url(${hrmBackdrop})`
+            }}>
+                <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+                    <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                        <div className="d-flex align-items-center gap-3 mb-2">
+                            <div className="d-flex align-items-center justify-content-center flex-shrink-0"
+                                 style={{
+                                     width: 52, height: 52, borderRadius: 14,
+                                     background: 'rgba(255,255,255,0.10)',
+                                     border: '1px solid rgba(255,255,255,0.22)',
+                                     color: '#fff'
+                                 }}>
+                                {org?.logo
+                                    ? <img src={getImageUrl(org.logo)} alt="" style={{ width: '100%', height: '100%', borderRadius: 14, objectFit: 'cover' }} />
+                                    : <FaBuilding size={21} />}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                                <h1>{org?.name || 'Your Organization'}</h1>
+                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                    <StatusBadge status={org?.status} />
+                                    <span className="hero-sub">
+                                        {org?.industry || 'Industry not set'}
+                                        {' · '}{structure?.departments || 0} department(s)
+                                        {' · '}{structure?.positions || 0} position(s)
+                                    </span>
+                                </div>
                             </div>
                         </div>
+                        <div className="hero-sub">Here's what's happening in your organization today.</div>
                     </div>
-                )}
-                {(org?.status === 'suspended' || org?.status === 'inactive') && (
-                    <div className="mt-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}>
-                        <div className="text-dark" style={{ fontSize: '0.8rem' }}>
-                            <strong>Organization {org.status}.</strong> Publishing vacancies and adding team
-                            members are disabled.
-                            {org.rejectionReason && <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>}
-                            <div className="mt-1">Contact the System Administrator.</div>
-                        </div>
-                    </div>
-                )}
-            </Card>
 
-            {/* Workforce */}
-            <SectionHeader title="Workforce" description="Employee statistics across your organization" />
-            <div className="row g-3 mb-4">
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Total Employees" value={employees?.total ?? 0} icon={FaUsers}
-                              hint="On the directory" to="/employer/employees" />
+                    <div className="d-flex gap-2 flex-wrap">
+                        <Link to="/employer/employees" className="btn btn-sm btn-primary fw-semibold">
+                            <FaPlus className="me-2" size={11} />Add Employee
+                        </Link>
+                        <Link to="/employer/profile" className="btn btn-sm btn-light fw-semibold">
+                            Edit organization
+                        </Link>
+                    </div>
                 </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Active" value={employees?.active ?? 0} icon={FaCheckCircle} tone="#16A34A"
-                              hint="Currently employed" to="/employer/employees" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="On Leave" value={employees?.onLeave ?? 0} icon={FaCalendarAlt} tone="#D97706"
-                              hint="Away right now" to="/employer/leave" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="New This Month" value={employees?.newThisMonth ?? 0} icon={FaUserFriends}
-                              tone="#0EA5E9" hint="Hired in the last 30 days" to="/employer/employees" />
+            </section>
+
+            {/* Workforce, lifted over the photograph */}
+            <div className="hero-overlap">
+                <div className="row g-3 mb-4">
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Total Employees" value={employees?.total ?? 0} icon={FaUsers}
+                                  hint="On the directory" to="/employer/employees" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Active" value={employees?.active ?? 0} icon={FaCheckCircle} tone="#16A34A"
+                                  hint="Currently employed" to="/employer/employees" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="On Leave" value={employees?.onLeave ?? 0} icon={FaCalendarAlt} tone="#D97706"
+                                  hint="Away right now" to="/employer/leave" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="New This Month" value={employees?.newThisMonth ?? 0} icon={FaUserFriends}
+                                  tone="#0EA5E9" hint="Hired in the last 30 days" to="/employer/employees" />
+                    </div>
                 </div>
             </div>
+
+            {/* Verification status, kept directly under the headline figures so
+                an organization cannot miss why it is unable to publish. */}
+            {org?.status === 'pending' && (
+                <div className="mb-4 p-3 rounded" style={{ background: 'rgba(180,131,10,0.16)', border: '1px solid rgba(252,211,77,0.45)' }}>
+                    <div style={{ fontSize: '0.84rem', color: '#FDE68A' }}>
+                        <strong>Awaiting verification.</strong> The System Administrator has not approved
+                        your organization yet, so you cannot publish vacancies or add HR team members.{' '}
+                        <Link to="/employer/verification">Complete your application</Link>.
+                    </div>
+                </div>
+            )}
+            {org?.status === 'rejected' && (
+                <div className="mb-4 p-3 rounded" style={{ background: 'rgba(153,27,27,0.22)', border: '1px solid rgba(252,165,165,0.45)' }}>
+                    <div style={{ fontSize: '0.84rem', color: '#FECACA' }}>
+                        <strong>Verification was not approved.</strong>
+                        {org.rejectionReason && <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>}
+                        <div className="mt-1">
+                            <Link to="/employer/verification">Correct your application and resubmit</Link>.
+                        </div>
+                    </div>
+                </div>
+            )}
+            {(org?.status === 'suspended' || org?.status === 'inactive') && (
+                <div className="mb-4 p-3 rounded" style={{ background: 'rgba(153,27,27,0.22)', border: '1px solid rgba(252,165,165,0.45)' }}>
+                    <div style={{ fontSize: '0.84rem', color: '#FECACA' }}>
+                        <strong>Organization {org.status}.</strong> Publishing vacancies and adding team
+                        members are disabled.
+                        {org.rejectionReason && <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>}
+                        <div className="mt-1">Contact the System Administrator.</div>
+                    </div>
+                </div>
+            )}
 
             {/* Recruitment */}
             <SectionHeader title="Recruitment" description="Vacancy and application pipeline" />

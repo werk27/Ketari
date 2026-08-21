@@ -1,0 +1,107 @@
+/**
+ * Dark presentation for the employer workspace dashboard.
+ *
+ * Scoped under .employer-dash on purpose. Card, StatCard and SectionHeader are
+ * shared with every other role, so their light styling is overridden only
+ * inside this one page rather than changed at the source, which would turn the
+ * candidate, HR and admin workspaces dark as a side effect.
+ */
+
+.employer-dash {
+    /* Cancel the workspace main padding so the hero can reach the edges, then
+       reapply it to the content inside. */
+    margin: -1rem;
+    padding: 0 1rem 1.5rem;
+    background: #080F1F;
+    min-height: calc(100vh - 66px);
+}
+
+@media (min-width: 768px) {
+    .employer-dash {
+        margin: -1.5rem;
+        padding: 0 1.5rem 2rem;
+    }
+}
+
+/* ---------- hero ---------- */
+.employer-dash .employer-hero {
+    margin: 0 -1rem 0;
+    padding: 2.75rem 1rem 7rem;
+    background-size: cover;
+    background-position: center 22%;
+    background-repeat: no-repeat;
+    position: relative;
+}
+
+@media (min-width: 768px) {
+    .employer-dash .employer-hero {
+        margin: 0 -1.5rem 0;
+        padding: 3.5rem 1.5rem 8rem;
+    }
+}
+
+.employer-dash .employer-hero h1 {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.65rem;
+    margin-bottom: 0.35rem;
+}
+
+.employer-dash .employer-hero .hero-sub {
+    color: rgba(226, 232, 240, 0.82);
+    font-size: 0.9rem;
+}
+
+/* The statistics sit over the lower edge of the photograph, which is why the
+   hero carries so much bottom padding. */
+.employer-dash .hero-overlap {
+    margin-top: -5rem;
+    position: relative;
+    z-index: 2;
+}
+
+/* ---------- dark cards ---------- */
+.employer-dash .bg-white {
+    background: rgba(18, 30, 56, 0.82) !important;
+    border-color: rgba(148, 163, 184, 0.18) !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.employer-dash .text-dark {
+    color: #F1F5F9 !important;
+}
+
+.employer-dash .text-muted {
+    color: rgba(148, 163, 184, 0.85) !important;
+}
+
+.employer-dash h6,
+.employer-dash h5 {
+    color: #F1F5F9;
+}
+
+.employer-dash a:not(.btn) {
+    color: #93C5FD;
+}
+
+.employer-dash a:not(.btn):hover {
+    color: #BFDBFE;
+}
+
+/* Quick actions read as tiles rather than pale buttons on a dark surface. */
+.employer-dash .btn-light {
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.2);
+    color: #E2E8F0;
+}
+
+.employer-dash .btn-light:hover {
+    background: rgba(148, 163, 184, 0.22);
+    color: #fff;
+}
+
+/* Progress rails inside the application breakdown. */
+.employer-dash .rail {
+    background: rgba(148, 163, 184, 0.18) !important;
+}
