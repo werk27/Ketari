@@ -62,6 +62,9 @@ const cleanup = async (ids) => {
     if (ids.resumeId) {
         await db.collection('resumes').deleteOne({ _id: oid(ids.resumeId) });
     }
+    if (ids.secondApplicationId) {
+        await db.collection('applications').deleteOne({ _id: oid(ids.secondApplicationId) });
+    }
     const users = await db.collection('users').deleteMany({ email: candidateEmail });
     await db.collection('notifications').deleteMany({ user: ids.candidateId ? oid(ids.candidateId) : null });
     await mongoose.disconnect();
@@ -211,6 +214,34 @@ const cleanup = async (ids) => {
 
     const own = await call('GET', '/employees/me', null, employeeToken);
     check('the employee can read their own record', own.status === 200, own.status);
+
+    // ---------- being hired does not end a job search ----------
+    // The applications and CV belong to the person, not the organization that
+    // hired them: someone hired by one employer must still be able to follow
+    // or withdraw an application they left open with another.
+    const stillSeeking = [
+        ['/applications/me', 'see their own applications'],
+        ['/resumes', 'manage their own CV'],
+        ['/jobs', 'browse vacancies']
+    ];
+    for (const [endpoint, label] of stillSeeking) {
+        // eslint-disable-next-line no-await-in-loop
+        const res = await call('GET', endpoint, null, employeeToken);
+        check(`an employee can still ${label}`, res.status === 200, { endpoint, status: res.status });
+    }
+
+    const secondApplication = await call('POST', '/applications', {
+        jobId: openJob._id, resumeId: ids.resumeId, coverLetter: 'Applying again while employed.'
+    }, employeeToken);
+    // Applying to the same vacancy twice is refused on its own merits; what
+    // matters here is that it is not refused because they are an employee.
+    check('an employee is not blocked from applying by their role',
+        secondApplication.status !== 403, {
+            status: secondApplication.status, message: secondApplication.data?.message
+        });
+    if (secondApplication.status === 201) {
+        ids.secondApplicationId = secondApplication.data.application?._id || secondApplication.data.data?._id;
+    }
 
     // ---------- and nothing more ----------
     const forbidden = [

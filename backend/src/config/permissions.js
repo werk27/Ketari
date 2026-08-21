@@ -28,6 +28,14 @@ const CAPABILITIES = {
     APPLICATION_SHORTLIST: 'application:shortlist',
     APPLICATION_DECIDE: 'application:decide',
 
+    // ---------- Job seeking (acting on your own behalf) ----------
+    // Held by candidates and by employees alike. Being hired does not end a
+    // person's job search: the applications and CV are theirs, not the
+    // organization's, and someone hired by one employer must still be able to
+    // follow up or withdraw an application they made to another.
+    JOB_SEEK: 'jobseek:apply',            // apply, withdraw, save a vacancy
+    JOB_SEEK_PROFILE: 'jobseek:profile',  // own CVs
+
     CANDIDATE_VIEW: 'candidate:view',
 
     INTERVIEW_SCHEDULE: 'interview:schedule',
@@ -145,7 +153,12 @@ const EMPLOYEE_CAPABILITIES = [
     C.TRAINING_PARTICIPATE,
     C.ATTENDANCE_SELF,
     C.COMPLAINT_RAISE,
-    C.DOCUMENT_SELF
+    C.DOCUMENT_SELF,
+    // Being hired does not end a job search. Without these an employee loses
+    // sight of applications they already made to other organizations and
+    // cannot even withdraw them.
+    C.JOB_SEEK,
+    C.JOB_SEEK_PROFILE
 ];
 
 const ROLE_CAPABILITIES = {
@@ -179,6 +192,8 @@ const ROLE_CAPABILITIES = {
     // Candidates act only on their own recruitment participation.
     // Ownership is additionally enforced per-record in the controllers.
     candidate: [
+        C.JOB_SEEK,
+        C.JOB_SEEK_PROFILE,
         C.COMPLAINT_RAISE,
         C.DOCUMENT_SELF
     ]

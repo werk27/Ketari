@@ -16,10 +16,10 @@ const { CAPABILITIES } = require('../config/permissions');
 
 // @route   POST /api/applications
 // @desc    Apply for a job
-// @access  Private (Candidate)
+// @access  Private (anyone job seeking: candidate or employee)
 router.post('/', [
     protect,
-    authorize('candidate'),
+    can(CAPABILITIES.JOB_SEEK),
     body('jobId')
         .notEmpty().withMessage('Job ID is required')
         .bail()
@@ -31,14 +31,17 @@ router.post('/', [
 ], applyJob);
 
 // @route   GET /api/applications/me
-// @desc    Get the candidate's own applications
-// @access  Private (Candidate)
-router.get('/me', protect, authorize('candidate'), getMyApplications);
+// @desc    The caller's own applications
+// @access  Private (anyone job seeking)
+// Gated on the capability rather than the candidate role: being hired by one
+// organization must not hide the applications a person still has open with
+// another, or leave them unable to withdraw one.
+router.get('/me', protect, can(CAPABILITIES.JOB_SEEK), getMyApplications);
 
 // @route   PUT /api/applications/:id/withdraw
 // @desc    Withdraw own application
-// @access  Private (Candidate)
-router.put('/:id/withdraw', protect, authorize('candidate'), withdrawApplication);
+// @access  Private (anyone job seeking; ownership checked in the controller)
+router.put('/:id/withdraw', protect, can(CAPABILITIES.JOB_SEEK), withdrawApplication);
 
 // @route   GET /api/applications/pending-decision
 // @desc    Applications across the organization awaiting the manager's decision

@@ -101,15 +101,20 @@ function AppContent() {
 
                     {/* ============================================
                         CANDIDATE - participates in recruitment
+
+                        The job-seeking pages also admit employees. Being hired
+                        does not end a person's job search, and someone hired by
+                        one organization may still have an application open with
+                        another that they need to follow or withdraw.
                        ============================================ */}
                     <Route path="/candidate/dashboard" element={
-                        <ProtectedRoute allowedRoles={['candidate']}><Dashboard /></ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['candidate', 'employee']}><Dashboard /></ProtectedRoute>
                     } />
                     <Route path="/candidate/profile" element={
-                        <ProtectedRoute allowedRoles={['candidate']}><Profile /></ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['candidate', 'employee']}><Profile /></ProtectedRoute>
                     } />
                     <Route path="/candidate/apply/:jobId" element={
-                        <ProtectedRoute allowedRoles={['candidate']}><ApplyJob /></ProtectedRoute>
+                        <ProtectedRoute allowedRoles={['candidate', 'employee']}><ApplyJob /></ProtectedRoute>
                     } />
                     <Route path="/candidate/complaints" element={
                         <ProtectedRoute allowedRoles={['candidate']}><Complaints /></ProtectedRoute>

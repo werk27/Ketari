@@ -67,7 +67,10 @@ router.get('/:id/matches', protect, can(CAPABILITIES.AI_MATCH), withEmployerScop
 // @route   POST /api/jobs/:id/save
 // @desc    Toggle Save/Bookmark Job
 // @access  Private (Candidate)
-router.post('/:id/save', protect, authorize('candidate'), toggleSaveJob);
+// @route   POST /api/jobs/:id/save
+// @desc    Save or unsave a vacancy
+// @access  Private (anyone job seeking)
+router.post('/:id/save', protect, can(CAPABILITIES.JOB_SEEK), toggleSaveJob);
 
 // @route   PUT /api/jobs/:id/submit
 // @desc    Submit a draft vacancy for HR Manager approval

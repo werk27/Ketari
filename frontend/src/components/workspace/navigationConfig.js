@@ -192,6 +192,15 @@ export const NAVIGATION = {
                     { to: '/employee/profile', label: 'My Profile', icon: FaUsers },
                     { to: '/employee/complaints', label: 'Complaints & Feedback', icon: FaComments }
                 ]
+            },
+            {
+                // Being hired does not end a job search, and someone hired by one
+                // organization may still have an application open with another.
+                label: 'My Job Search',
+                items: [
+                    { to: '/jobs', label: 'Find Jobs', icon: FaBriefcase },
+                    { to: '/candidate/dashboard', label: 'My Applications', icon: FaListAlt }
+                ]
             }
         ]
     },

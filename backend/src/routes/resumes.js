@@ -8,7 +8,8 @@ const {
     setDefaultResume, 
     deleteResume 
 } = require('../controllers/resumeController');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, can } = require('../middleware/auth');
+const { CAPABILITIES } = require('../config/permissions');
 const { UPLOAD_PATHS } = require('../config/paths');
 
 // Configure multer for file upload
@@ -40,24 +41,28 @@ const upload = multer({
     fileFilter: fileFilter
 });
 
+// A CV belongs to the person, not to whoever hired them, so these are gated on
+// the job-seeking capability rather than the candidate role. Every handler
+// already scopes by req.user.id, so one person can only ever touch their own.
+
 // @route   POST /api/resumes
 // @desc    Upload resume
-// @access  Private (Candidate)
-router.post('/', protect, authorize('candidate'), upload.single('resume'), uploadResume);
+// @access  Private (candidate or employee)
+router.post('/', protect, can(CAPABILITIES.JOB_SEEK_PROFILE), upload.single('resume'), uploadResume);
 
 // @route   GET /api/resumes
 // @desc    Get user's resumes
-// @access  Private (Candidate)
-router.get('/', protect, authorize('candidate'), getResumes);
+// @access  Private (candidate or employee)
+router.get('/', protect, can(CAPABILITIES.JOB_SEEK_PROFILE), getResumes);
 
 // @route   PUT /api/resumes/:id/default
 // @desc    Set default resume
-// @access  Private (Candidate)
-router.put('/:id/default', protect, authorize('candidate'), setDefaultResume);
+// @access  Private (candidate or employee)
+router.put('/:id/default', protect, can(CAPABILITIES.JOB_SEEK_PROFILE), setDefaultResume);
 
 // @route   DELETE /api/resumes/:id
 // @desc    Delete resume
-// @access  Private (Candidate)
-router.delete('/:id', protect, authorize('candidate'), deleteResume);
+// @access  Private (candidate or employee)
+router.delete('/:id', protect, can(CAPABILITIES.JOB_SEEK_PROFILE), deleteResume);
 
 module.exports = router;
