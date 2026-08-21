@@ -1,0 +1,188 @@
+/* frontend/src/components/common/Navbar.css */
+
+/* Navbar Base */
+.custom-navbar {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.custom-navbar.scrolled {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05) !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(12px) !important;
+}
+
+.theme-dark .custom-navbar {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.theme-dark .custom-navbar.scrolled {
+    background: rgba(15, 23, 42, 0.95) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Nav Links */
+.nav-link-custom {
+    position: relative;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
+    margin: 0 4px;
+    border-radius: 8px;
+    transition: all 0.2s ease !important;
+}
+
+.nav-link-custom:hover {
+    color: var(--primary-color) !important;
+    background-color: var(--primary-subtle);
+}
+
+.nav-link-custom.active {
+    color: var(--primary-color) !important;
+    font-weight: 600 !important;
+    background-color: var(--primary-subtle);
+}
+
+/* Auth Buttons */
+.auth-btn-login {
+    font-weight: 600;
+    color: var(--text-primary);
+    background: transparent;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.auth-btn-login:hover {
+    background: var(--gray-100);
+    color: var(--primary-color);
+}
+
+.theme-dark .auth-btn-login:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.auth-btn-signup {
+    background: var(--primary-color);
+    color: white;
+    font-weight: 600;
+    border: none;
+    box-shadow: 0 4px 12px rgba(15, 107, 79, 0.2);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.auth-btn-signup:hover {
+    background: var(--primary-strong);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(15, 107, 79, 0.3);
+    color: white;
+}
+
+/* User Dropdown */
+.user-dropdown-toggle {
+    transition: all 0.2s ease;
+    border: 1px solid transparent !important;
+}
+
+.user-dropdown-toggle:hover {
+    background: var(--gray-50) !important;
+    border-color: var(--gray-200) !important;
+}
+
+.theme-dark .user-dropdown-toggle:hover {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Hide Bootstrap dropdown caret */
+.user-dropdown-toggle::after {
+    display: none !important;
+}
+
+.dropdown-item-custom {
+    padding: 10px 16px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-radius: 6px;
+    margin: 2px 8px;
+    width: auto;
+    transition: all 0.2s ease;
+}
+
+.dropdown-item-custom:hover {
+    background-color: var(--primary-subtle);
+    color: var(--primary-color);
+}
+
+.dropdown-item-custom.text-danger:hover {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--error) !important;
+}
+
+/* Mobile Toggle Hamburger */
+.navbar-toggler-custom {
+    border: none;
+    background: transparent;
+    padding: 8px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.navbar-toggler-custom:hover {
+    background: var(--gray-100);
+}
+
+.theme-dark .navbar-toggler-custom:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.navbar-toggler-custom:focus {
+    box-shadow: none;
+    outline: none;
+}
+
+/* Mobile Drawer Styles */
+@media (max-width: 991px) {
+    .custom-navbar .navbar-collapse {
+        background: var(--surface);
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        border-top: 1px solid var(--border-color);
+        max-height: calc(100vh - 70px);
+        overflow-y: auto;
+        border-radius: 0 0 16px 16px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .theme-dark .custom-navbar .navbar-collapse {
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .nav-link-custom {
+        padding: 12px 16px !important;
+        margin: 4px 0;
+    }
+    
+    .auth-btn-login, .auth-btn-signup {
+        width: 100%;
+        text-align: center;
+        padding: 12px;
+        margin-top: 8px;
+    }
+    
+    .user-dropdown-toggle {
+        width: 100%;
+        justify-content: flex-start;
+        padding: 12px 16px !important;
+        margin-top: 12px;
+    }
+    
+    .custom-navbar .dropdown-menu {
+        border: none;
+        box-shadow: none;
+        padding-left: 20px;
+        background: transparent;
+    }
+}

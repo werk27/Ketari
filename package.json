@@ -1,0 +1,8 @@
+{
+  "name": "recruitai-platform",
+  "version": "1.0.0",
+  "description": "All-in-one launcher for KETARI Recruitment Platform",
+  "scripts": {
+    "start": "start-all.bat"
+  }
+}

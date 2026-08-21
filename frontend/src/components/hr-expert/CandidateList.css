@@ -1,0 +1,74 @@
+/* CandidateList.css - WabiJob Inspired Styling for Talent Directory */
+
+.candidate-list-page {
+    font-family: 'Inter', sans-serif;
+}
+
+.search-input-group .form-control:focus {
+    box-shadow: none;
+}
+
+.candidate-card {
+    transition: all 0.3s ease-in-out;
+    border: 1px solid #f3f4f6 !important;
+}
+
+.candidate-card:hover {
+    border-color: rgba(15, 107, 79, 0.2) !important;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.06) !important;
+    transform: translateY(-4px);
+}
+
+.skill-pill-sm {
+    background-color: #f3f4f6;
+    color: #374151;
+    padding: 4px 10px;
+    border-radius: 50px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    cursor: default;
+}
+
+.skill-pill-sm:hover {
+    background-color: #e5e7eb;
+}
+
+.text-truncate-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.6;
+}
+
+.candidate-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: center;
+}
+
+.custom-badge-toggle {
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.custom-badge-toggle:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+
+.filter-panel-expand {
+    animation: slideDown 0.3s ease-out forwards;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

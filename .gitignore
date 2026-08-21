@@ -1,0 +1,88 @@
+# ============================================
+# RECRUITAI - .gitignore
+# ============================================
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Environment files (SECRET KEYS - NEVER UPLOAD!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+frontend/.env
+python-ai-service/.env
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+python-ai-service/venv/
+
+# Uploaded files (Resumes, Photos)
+uploads/
+backend/uploads/
+profile-photos/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.code-workspace
+
+# Build and Distribution
+build/
+dist/
+*.log
+
+# MongoDB data (Local database files)
+data/
+mongodb/
+dump/
+backend/backups/
+
+# Local scratch scripts (may contain connection strings)
+backend/test-mongo.js
+
+# Operating System files
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Secret keys (if any)
+*.pem
+*.key
+*.crt

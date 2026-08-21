@@ -1,0 +1,128 @@
+/* JobSearch.css - WabiJob Inspired Styling */
+
+.job-search-page {
+    font-family: 'Inter', sans-serif;
+}
+
+.search-input-group .form-control:focus {
+    box-shadow: none;
+}
+
+.filter-group h6 {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.custom-checkbox .form-check-input {
+    border-color: var(--gray-300);
+    cursor: pointer;
+}
+
+.custom-checkbox .form-check-input:checked {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.custom-checkbox .form-check-label {
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: var(--gray-600);
+}
+
+.custom-checkbox:hover .form-check-label {
+    color: var(--primary-color);
+}
+
+.job-card {
+    transition: all 0.2s ease-in-out;
+    border: 1px solid var(--border-color) !important;
+    background: var(--surface);
+}
+
+.job-card:hover {
+    border-color: var(--primary-subtle) !important;
+    box-shadow: var(--shadow-md) !important;
+    transform: translateY(-2px);
+}
+
+.job-title-link {
+    transition: color 0.2s;
+}
+
+.job-title-link:hover {
+    color: var(--primary-color) !important;
+}
+
+.job-meta-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    color: var(--gray-600);
+    font-size: 0.9rem;
+}
+
+.meta-icon {
+    color: var(--gray-400);
+    margin-right: 6px;
+}
+
+.skill-pill {
+    background-color: var(--gray-100);
+    color: var(--gray-700);
+    padding: 6px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    cursor: default;
+}
+
+.skill-pill:hover {
+    background-color: var(--gray-200);
+}
+
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.6;
+}
+
+.tracking-wider {
+    letter-spacing: 0.05em;
+}
+
+.job-bookmark-icon {
+    transition: color 0.2s;
+}
+
+.job-bookmark-icon:hover {
+    color: var(--primary-color) !important;
+}
+
+/* Custom Pagination to match WabiJob */
+.custom-pagination .page-item .page-link {
+    border: none;
+    color: var(--gray-600);
+    margin: 0 4px;
+    border-radius: var(--radius-md);
+    padding: 8px 16px;
+    font-weight: 500;
+}
+
+.custom-pagination .page-item.active .page-link {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.custom-pagination .page-item:hover:not(.active) .page-link {
+    background-color: var(--gray-100);
+    color: var(--primary-color);
+}

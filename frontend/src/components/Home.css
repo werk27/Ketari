@@ -1,0 +1,223 @@
+/* Modern Design System for Home Page */
+
+.hero-section {
+    background: var(--body-bg);
+    padding: 100px 0 80px;
+    position: relative;
+    overflow: hidden;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--primary-subtle);
+    color: var(--primary-color);
+    padding: 8px 22px;
+    border-radius: var(--radius-pill);
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 24px;
+    border: 1px solid rgba(15, 107, 79, 0.2);
+}
+
+.hero-title {
+    font-size: 3.5rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 24px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+.hero-subtitle {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    margin-bottom: 36px;
+    max-width: 520px;
+    line-height: 1.7;
+}
+
+.hero-buttons {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.hero-btn-solid {
+    background: var(--primary-color) !important;
+    color: #ffffff !important;
+    border: none !important;
+    padding: 14px 38px !important;
+    border-radius: 50px !important;
+    font-weight: 700 !important;
+    box-shadow: 0 10px 25px rgba(15, 107, 79, 0.28) !important;
+    transition: all 0.3s ease !important;
+}
+
+.hero-btn-solid:hover {
+    background: var(--primary-strong) !important;
+    transform: translateY(-3px) !important;
+    box-shadow: 0 14px 32px rgba(15, 107, 79, 0.38) !important;
+}
+
+.hero-btn-outline {
+    background: transparent !important;
+    color: var(--primary-color) !important;
+    border: 2px solid var(--primary-color) !important;
+    padding: 12px 36px !important;
+    border-radius: 50px !important;
+    font-weight: 700 !important;
+    transition: all 0.3s ease !important;
+}
+
+.hero-btn-outline:hover {
+    background: rgba(15, 107, 79, 0.05) !important;
+    transform: translateY(-3px) !important;
+}
+
+.hero-stats-row {
+    display: flex;
+    gap: 20px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.hero-visual {
+    position: relative;
+    height: 400px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.floating-job-card {
+    position: absolute;
+    width: 320px;
+    border: 1px solid var(--border-color) !important;
+    border-radius: var(--radius-2xl) !important;
+    animation: float 6s ease-in-out infinite;
+    background: var(--surface);
+}
+
+.card-1 {
+    top: 20px;
+    right: 20px;
+    z-index: 2;
+}
+
+.card-2 {
+    bottom: 20px;
+    left: 20px;
+    z-index: 1;
+    animation-delay: -3s;
+}
+
+@keyframes float {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-15px); }
+    100% { transform: translateY(0px); }
+}
+
+/* Workflow Cards */
+.workflow-card {
+    border-radius: var(--radius-2xl) !important;
+    background: var(--primary-color);
+    color: white;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    border: 1px solid var(--border-color);
+}
+
+.workflow-card.employer-card {
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
+.workflow-card.talent-card {
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
+.workflow-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-lg) !important;
+}
+
+.workflow-step {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.step-num {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+/* Service Cards */
+.service-card {
+    border-radius: var(--radius-xl) !important;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+}
+
+.service-card:hover {
+    border-color: var(--primary-light) !important;
+    box-shadow: var(--shadow-md) !important;
+    transform: translateY(-4px);
+}
+
+.service-card:hover .service-icon {
+    color: var(--primary-color);
+    background: rgba(15, 107, 79, 0.1);
+}
+
+.service-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: var(--muted);
+    background: #f5f7fa;
+    transition: all 0.3s ease;
+}
+
+/* Featured Candidates */
+.featured-candidate-card {
+    border-radius: 16px !important;
+    transition: all 0.3s ease;
+}
+
+.featured-candidate-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.08) !important;
+}
+
+@media (max-width: 991px) {
+    .hero-title {
+        font-size: 2.5rem;
+    }
+    .hero-visual {
+        margin-top: 40px;
+        height: 450px;
+    }
+    .card-1 { right: 0; left: 50%; transform: translateX(-50%); }
+    .card-2 { left: 50%; transform: translateX(-50%); bottom: 0; }
+    
+    .hero-stats-row {
+        flex-direction: column;
+        gap: 10px;
+    }
+}

@@ -1,0 +1,439 @@
+/* Additional custom styles beyond index.css */
+
+/* Auth Pages */
+.auth-section {
+    min-height: calc(100vh - 200px);
+    display: flex;
+    align-items: flex-start;
+    padding: 40px 0;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    overflow-y: auto;
+}
+
+.auth-card {
+    border-radius: 20px !important;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    background: rgba(255, 255, 255, 0.95);
+}
+
+.auth-icon {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: var(--gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.input-group-custom {
+    position: relative;
+}
+
+.input-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+    z-index: 10;
+}
+
+.input-group-custom .form-control-custom {
+    padding-left: 42px;
+}
+
+.role-selector {
+    display: flex;
+    gap: 16px;
+}
+
+.role-option {
+    flex: 1;
+}
+
+.role-radio {
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+.role-radio:hover {
+    border-color: var(--primary-color);
+    background: rgba(255, 107, 53, 0.08);
+}
+
+.role-radio .form-check-input:checked + .form-check-label {
+    border-color: var(--primary-color);
+}
+
+.role-radio .form-check-input:checked ~ .form-check-label {
+    border-color: var(--primary-color);
+}
+
+/* Dashboard */
+.welcome-section h2 {
+    color: var(--text-primary);
+}
+
+.dashboard-card {
+    border: none;
+    border-radius: 16px;
+    background: var(--surface);
+    padding: 20px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+    transition: all 0.3s ease;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-card .icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 107, 53, 0.08);
+    color: var(--primary-color);
+}
+
+.dashboard-card .number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.dashboard-card .label {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* Resume Selector */
+.resume-option {
+    padding: 12px 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.resume-option:hover {
+    border-color: var(--primary-color);
+    background: rgba(255, 107, 53, 0.06);
+}
+
+.resume-option .form-check-input:checked ~ .form-check-label {
+    border-color: var(--primary-color);
+}
+
+.resume-radio {
+    width: 100%;
+}
+
+.resume-radio .form-check-input {
+    margin-top: 0.2rem;
+}
+
+.resume-radio .form-check-label {
+    width: 100%;
+    padding-left: 8px;
+}
+
+/* Job Tags */
+.job-tag {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 6px;
+    margin-bottom: 6px;
+}
+
+/* Match Score */
+.match-score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
+.match-medium {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.match-low {
+    background: #fce4ec;
+    color: #c62828;
+}
+
+/* Loading States */
+.loading-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 400px;
+}
+
+/* Responsive Tables */
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.85rem;
+    }
+    
+    .table-responsive .btn-sm {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.7rem;
+    }
+}
+
+/* Animation */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in-up {
+    animation: fadeInUp 0.5s ease forwards;
+}
+
+/* Toast Customization */
+.Toastify__toast {
+    border-radius: 12px !important;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+}
+
+.Toastify__toast-body {
+    font-weight: 500 !important;
+}
+
+/* Modal Customization */
+.modal-content {
+    border-radius: 16px !important;
+    border: none !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15) !important;
+    background: var(--surface);
+    color: var(--text-primary);
+}
+
+.modal-header {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    padding: 20px 24px !important;
+}
+
+.modal-footer {
+    border-top: 1px solid rgba(0, 0, 0, 0.08) !important;
+    padding: 16px 24px !important;
+}
+
+/* Button Variants */
+.btn-primary-gradient {
+    background: var(--gradient);
+    border: none;
+    color: white;
+    padding: 10px 28px;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-primary-gradient:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(255, 107, 53, 0.3);
+    color: white;
+}
+
+.btn-primary-gradient:disabled {
+    opacity: 0.6;
+    transform: none;
+}
+
+.btn-outline-primary-custom {
+    border: 2px solid var(--primary-color);
+    color: var(--primary-color);
+    background: transparent;
+    padding: 8px 20px;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.btn-outline-primary-custom:hover {
+    background: var(--gradient);
+    color: white;
+    border-color: transparent;
+    transform: translateY(-2px);
+}
+
+/* Form Controls */
+.form-control-custom {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+    padding: 12px 16px;
+    transition: all 0.3s ease;
+}
+
+.form-control-custom:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+}
+
+.form-control-custom:disabled {
+    background: #f5f5f5;
+}
+
+.form-label-custom {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+/* Select Custom */
+select.form-control-custom {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 40px;
+}
+
+/* Checkbox and Radio Custom */
+.form-check-input {
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 2px solid #ccc;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.form-check-input:checked {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.form-check-input:focus {
+    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+}
+
+.form-check-input[type="radio"] {
+    border-radius: 50%;
+}
+
+/* Pagination */
+.pagination .page-link {
+    border: none;
+    padding: 8px 16px;
+    color: var(--text-primary);
+    border-radius: 8px !important;
+    margin: 0 2px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.pagination .page-link:hover {
+    background: rgba(255, 107, 53, 0.08);
+    color: var(--primary-color);
+}
+
+.pagination .page-item.active .page-link {
+    background: var(--gradient);
+    color: white;
+}
+
+.pagination .page-item.disabled .page-link {
+    color: #ccc;
+}
+
+/* Badge Custom */
+.badge {
+    padding: 6px 14px;
+    font-weight: 600;
+    border-radius: 20px;
+    font-size: 0.75rem;
+}
+
+/* Table Custom */
+.table > :not(caption) > * > * {
+    padding: 14px 16px;
+}
+
+.table thead th {
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 2px solid rgba(0, 0, 0, 0.08);
+}
+
+.table tbody tr:hover {
+    background: rgba(123, 44, 191, 0.04);
+}
+
+/* Card Custom */
+.card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.card-header {
+    background: transparent;
+    border-bottom: 1px solid #f0f0f0;
+    padding: 16px 24px;
+}
+
+.card-body {
+    padding: 24px;
+}
+
+.card-footer {
+    background: transparent;
+    border-top: 1px solid #f0f0f0;
+    padding: 16px 24px;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 576px) {
+    .card-body {
+        padding: 16px;
+    }
+    
+    .dashboard-card {
+        padding: 16px;
+    }
+    
+    .dashboard-card .number {
+        font-size: 1.5rem;
+    }
+    
+    .role-selector {
+        flex-direction: column;
+    }
+    
+    .hero-title {
+        font-size: 1.8rem;
+    }
+    
+    .stat-number {
+        font-size: 1.8rem;
+    }
+}
