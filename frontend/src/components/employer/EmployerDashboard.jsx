@@ -90,7 +90,7 @@ const EmployerDashboard = () => {
                         <div className="text-dark" style={{ fontSize: '0.8rem' }}>
                             <strong>Awaiting verification.</strong> The System Administrator has not approved
                             your organization yet, so you cannot publish vacancies or add HR team members.{' '}
-                            <Link to="/employer/profile">Complete your verification details</Link> to speed this up.
+                            <Link to="/employer/verification">Complete your application</Link>.
                         </div>
                     </div>
                 )}
@@ -102,7 +102,7 @@ const EmployerDashboard = () => {
                                 <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>
                             )}
                             <div className="mt-1">
-                                <Link to="/employer/profile">Correct your details and resubmit</Link>.
+                                <Link to="/employer/verification">Correct your application and resubmit</Link>.
                             </div>
                         </div>
                     </div>

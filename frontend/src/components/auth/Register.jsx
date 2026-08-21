@@ -14,20 +14,6 @@ const Register = () => {
         confirmPassword: '',
         role: 'candidate'
     });
-    // Employer sign-ups are reviewed by an administrator before the organization
-    // may publish vacancies, so the identifying details are collected up front
-    // rather than leaving the reviewer with only a typed-in name to judge.
-    const [company, setCompany] = useState({
-        name: '',
-        organizationType: 'private_company',
-        tin: '',
-        businessLicenceNumber: '',
-        licenceExpiryDate: '',
-        industry: '',
-        phone: '',
-        city: '',
-        website: ''
-    });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const { register } = useAuth();
@@ -39,11 +25,6 @@ const Register = () => {
         setError('');
     };
 
-    const handleCompanyChange = (e) => {
-        setCompany({ ...company, [e.target.name]: e.target.value });
-        setError('');
-    };
-
     const handleSubmit = async (e) => {
         e.preventDefault();
         
@@ -52,29 +33,10 @@ const Register = () => {
             return;
         }
 
-        const licenceExempt = ['government', 'ngo'].includes(company.organizationType);
-        if (formData.role === 'employer') {
-            if (!company.name.trim()) {
-                setError('Enter your organization name.');
-                return;
-            }
-            if (!company.tin.trim()) {
-                setError('Enter your Tax Identification Number (TIN).');
-                return;
-            }
-            if (!licenceExempt && !company.businessLicenceNumber.trim()) {
-                setError('Enter your business or trade licence number.');
-                return;
-            }
-        }
-
         setLoading(true);
         setError('');
 
         const { confirmPassword, ...userData } = formData;
-        if (formData.role === 'employer') {
-            userData.company = { ...company, legalName: company.name };
-        }
         const result = await register(userData);
         setLoading(false);
 
@@ -87,7 +49,10 @@ const Register = () => {
             } else if (user.role === 'hr_manager') {
                 navigate('/hr-manager/dashboard');
             } else if (user.role === 'employer') {
-                navigate('/employer/dashboard');
+                // A new organization is unverified and cannot publish vacancies
+                // yet, so send it straight to the application rather than to a
+                // dashboard it would have to navigate away from.
+                navigate('/employer/verification');
             } else {
                 navigate('/candidate/dashboard');
             }
@@ -228,106 +193,6 @@ const Register = () => {
                                             </div>
                                         </Col>
                                     </Row>
-
-                                    {formData.role === 'employer' && (
-                                        <div className="mb-3 p-3 rounded" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                                            <h6 className="fw-bold text-dark mb-1" style={{ fontSize: '0.9rem' }}>
-                                                <FaBuilding className="me-2 text-primary" />Organization details
-                                            </h6>
-                                            <p className="text-muted mb-3" style={{ fontSize: '0.76rem' }}>
-                                                A System Administrator verifies your organization before you can
-                                                publish vacancies. Provide details that match your official records.
-                                            </p>
-
-                                            <Row className="g-2">
-                                                <Col md={12}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Registered organization name *
-                                                    </Form.Label>
-                                                    <Form.Control name="name" value={company.name}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder="Exactly as written on your licence" />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Organization type *
-                                                    </Form.Label>
-                                                    <Form.Select name="organizationType" value={company.organizationType}
-                                                                 onChange={handleCompanyChange}>
-                                                        <option value="private_company">Private company</option>
-                                                        <option value="sole_proprietor">Sole proprietor</option>
-                                                        <option value="government">Government body</option>
-                                                        <option value="ngo">NGO / non-profit</option>
-                                                        <option value="other">Other</option>
-                                                    </Form.Select>
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        TIN *
-                                                    </Form.Label>
-                                                    <Form.Control name="tin" value={company.tin}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder="Tax Identification Number" />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Business / trade licence number
-                                                        {!['government', 'ngo'].includes(company.organizationType) && ' *'}
-                                                    </Form.Label>
-                                                    <Form.Control name="businessLicenceNumber"
-                                                                  value={company.businessLicenceNumber}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder={['government', 'ngo'].includes(company.organizationType)
-                                                                      ? 'Authorising letter reference'
-                                                                      : 'Licence number'} />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Licence expiry date
-                                                    </Form.Label>
-                                                    <Form.Control type="date" name="licenceExpiryDate"
-                                                                  value={company.licenceExpiryDate}
-                                                                  onChange={handleCompanyChange} />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Industry
-                                                    </Form.Label>
-                                                    <Form.Control name="industry" value={company.industry}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder="e.g. Technology" />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Official phone
-                                                    </Form.Label>
-                                                    <Form.Control name="phone" value={company.phone}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder="+251 …" />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        City / town
-                                                    </Form.Label>
-                                                    <Form.Control name="city" value={company.city}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder="e.g. Hawassa" />
-                                                </Col>
-                                                <Col md={6}>
-                                                    <Form.Label className="fw-semibold" style={{ fontSize: '0.78rem' }}>
-                                                        Website
-                                                    </Form.Label>
-                                                    <Form.Control name="website" value={company.website}
-                                                                  onChange={handleCompanyChange}
-                                                                  placeholder="https://…" />
-                                                </Col>
-                                            </Row>
-                                            <div className="text-muted mt-2" style={{ fontSize: '0.74rem' }}>
-                                                After signing up, upload your licence or TIN certificate from your
-                                                organization profile to complete the application.
-                                            </div>
-                                        </div>
-                                    )}
 
                                     <Button
                                         type="submit"

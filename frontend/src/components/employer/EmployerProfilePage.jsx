@@ -1,27 +1,20 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Form, Button, Row, Col } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaCheck, FaTimes, FaFileAlt } from 'react-icons/fa';
 import api from '../../services/api';
 import { Card, SectionHeader, StatusBadge, LoadingState, ErrorState } from '../workspace/ui';
 
 /**
  * Organization profile.
  *
- * Represents the EMPLOYER as a company - not an individual HR user.
- * Platform-controlled fields (verification status) are read-only here.
+ * Represents the EMPLOYER as a company - not an individual HR user. This is the
+ * public-facing description candidates see. The verification application, which
+ * an administrator reviews, lives on its own page so that the identifying
+ * evidence and its documents stay together.
  */
 const EmployerProfilePage = () => {
     const [form, setForm] = useState(null);
     const [status, setStatus] = useState('');
-    const [checklist, setChecklist] = useState([]);
-    const [documents, setDocuments] = useState([]);
-    const [rejectionReason, setRejectionReason] = useState('');
-    const [employerId, setEmployerId] = useState(null);
-    const [docLabel, setDocLabel] = useState('Business licence');
-    const [docFile, setDocFile] = useState(null);
-    const [uploading, setUploading] = useState(false);
-    const [submitting, setSubmitting] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -33,10 +26,6 @@ const EmployerProfilePage = () => {
             const res = await api.get('/employers/me');
             const employer = res.data.employer || {};
             setStatus(employer.status);
-            setChecklist(res.data.checklist || []);
-            setDocuments(employer.verificationDocuments || []);
-            setRejectionReason(employer.rejectionReason || '');
-            setEmployerId(employer._id);
             setForm({
                 name: employer.name || '',
                 legalName: employer.legalName || '',
@@ -83,52 +72,6 @@ const EmployerProfilePage = () => {
         }
     };
 
-    const uploadDocument = async () => {
-        if (!docFile) return;
-        setUploading(true);
-        const body = new FormData();
-        body.append('document', docFile);
-        body.append('label', docLabel);
-        try {
-            const res = await api.post('/employers/me/documents', body,
-                { headers: { 'Content-Type': 'multipart/form-data' } });
-            setDocuments(res.data.documents || []);
-            setDocFile(null);
-            toast.success('Document uploaded');
-            load();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Could not upload the document');
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    const removeDocument = async (docId) => {
-        try {
-            const res = await api.delete(`/employers/me/documents/${docId}`);
-            setDocuments(res.data.documents || []);
-            load();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Could not remove the document');
-        }
-    };
-
-    const submitForReview = async () => {
-        setSubmitting(true);
-        try {
-            const res = await api.post('/employers/me/submit-verification');
-            toast.success(res.data.message);
-            load();
-        } catch (err) {
-            const data = err.response?.data;
-            toast.error(data?.missing?.length
-                ? `Still missing: ${data.missing.join(', ')}`
-                : (data?.message || 'Could not submit for verification'));
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
     if (loading) return <LoadingState label="Loading organization profile…" />;
     if (error) return <ErrorState message={error} onRetry={load} />;
 
@@ -143,89 +86,6 @@ const EmployerProfilePage = () => {
                 description="This information is shown to candidates on your published vacancies."
                 action={<StatusBadge status={status} />}
             />
-
-            {status !== 'active' && (
-                <div className="mb-4 p-3 rounded" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                    <h6 className="fw-bold text-dark mb-1" style={{ fontSize: '0.9rem' }}>Verification</h6>
-                    <p className="text-muted mb-3" style={{ fontSize: '0.78rem' }}>
-                        A System Administrator checks these details before your organization may publish
-                        vacancies or add HR team members.
-                    </p>
-
-                    {status === 'rejected' && rejectionReason && (
-                        <div className="mb-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}>
-                            <strong style={{ fontSize: '0.8rem' }}>Not approved:</strong>
-                            <div className="fst-italic" style={{ fontSize: '0.8rem' }}>“{rejectionReason}”</div>
-                        </div>
-                    )}
-
-                    <div className="mb-3">
-                        {checklist.map(item => (
-                            <div key={item.key} className="d-flex align-items-start gap-2 py-1"
-                                 style={{ fontSize: '0.79rem', borderBottom: '1px solid #F1F5F9' }}>
-                                <span style={{ color: item.met ? '#16A34A' : '#DC2626', minWidth: 16 }}>
-                                    {item.met ? <FaCheck size={11} /> : <FaTimes size={11} />}
-                                </span>
-                                <div>
-                                    <div className={item.met ? 'text-dark' : 'text-danger fw-semibold'}>{item.label}</div>
-                                    <div className="text-muted" style={{ fontSize: '0.73rem' }}>{item.detail}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    <h6 className="fw-semibold text-dark" style={{ fontSize: '0.82rem' }}>Supporting documents</h6>
-                    {documents.length === 0 ? (
-                        <p className="text-muted" style={{ fontSize: '0.78rem' }}>
-                            Upload your trade licence, TIN certificate or authorising letter.
-                        </p>
-                    ) : (
-                        <div className="d-flex flex-column gap-1 mb-2">
-                            {documents.map(doc => (
-                                <div key={doc._id} className="d-flex align-items-center gap-2" style={{ fontSize: '0.78rem' }}>
-                                    <FaFileAlt className="text-primary" />
-                                    <a href={`${api.defaults.baseURL}/employers/${employerId}/documents/${doc._id}`}
-                                       target="_blank" rel="noreferrer">{doc.label}</a>
-                                    <span className="text-muted">{doc.originalName}</span>
-                                    <Button size="sm" variant="link" className="text-danger p-0"
-                                            onClick={() => removeDocument(doc._id)}>remove</Button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    <Row className="g-2 align-items-end mb-3">
-                        <Col md={4}>
-                            <Form.Label style={{ fontSize: '0.78rem' }}>Document type</Form.Label>
-                            <Form.Select value={docLabel} onChange={e => setDocLabel(e.target.value)}>
-                                <option>Business licence</option>
-                                <option>TIN certificate</option>
-                                <option>Commercial registration</option>
-                                <option>Authorising letter</option>
-                                <option>Other</option>
-                            </Form.Select>
-                        </Col>
-                        <Col md={5}>
-                            <Form.Label style={{ fontSize: '0.78rem' }}>File (PDF or image, max 8MB)</Form.Label>
-                            <Form.Control type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
-                                          onChange={e => setDocFile(e.target.files[0])} />
-                        </Col>
-                        <Col md={3}>
-                            <Button variant="outline-primary" size="sm" className="w-100"
-                                    disabled={!docFile || uploading} onClick={uploadDocument}>
-                                {uploading ? 'Uploading…' : 'Upload'}
-                            </Button>
-                        </Col>
-                    </Row>
-
-                    <Button variant="primary" size="sm" disabled={submitting} onClick={submitForReview}>
-                        {submitting ? 'Submitting…' : 'Submit for verification'}
-                    </Button>
-                    <div className="text-muted mt-2" style={{ fontSize: '0.74rem' }}>
-                        Save your details below first, then submit.
-                    </div>
-                </div>
-            )}
 
             <Form onSubmit={save}>
                 <Row className="g-3">

@@ -2,7 +2,7 @@ import {
     FaChartBar, FaBriefcase, FaFileAlt, FaUsers, FaRobot,
     FaClipboardCheck, FaBell, FaBuilding, FaCog, FaPlusCircle,
     FaUserFriends, FaListAlt, FaCalendarAlt, FaClipboardList,
-    FaGraduationCap, FaExchangeAlt, FaUserClock, FaComments, FaUserCheck
+    FaGraduationCap, FaExchangeAlt, FaUserClock, FaComments, FaUserCheck, FaShieldAlt
 } from 'react-icons/fa';
 
 /**
@@ -116,6 +116,7 @@ export const NAVIGATION = {
                 label: 'Organization',
                 items: [
                     { to: '/employer/profile', label: 'Organization Profile', icon: FaBuilding },
+                    { to: '/employer/verification', label: 'Verification', icon: FaShieldAlt },
                     { to: '/employer/team', label: 'HR Team', icon: FaUserFriends },
                     { to: '/employer/configuration', label: 'Configuration', icon: FaCog }
                 ]

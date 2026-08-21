@@ -50,6 +50,7 @@ import OnboardingQueue from './components/hr/OnboardingQueue';
 import EmployerDashboard from './components/employer/EmployerDashboard';
 import EmployerTeam from './components/employer/EmployerTeam';
 import EmployerProfilePage from './components/employer/EmployerProfilePage';
+import EmployerVerification from './components/employer/EmployerVerification';
 import AdminDashboard from './components/admin/AdminDashboard';
 import AdminUserList from './components/admin/AdminUserList';
 import AdminEmployers from './components/admin/AdminEmployers';
@@ -167,6 +168,7 @@ function AppContent() {
                     }>
                         <Route index element={<Navigate to="/employer/dashboard" replace />} />
                         <Route path="dashboard" element={<EmployerDashboard />} />
+                        <Route path="verification" element={<EmployerVerification />} />
                         <Route path="profile" element={<EmployerProfilePage />} />
                         <Route path="team" element={<EmployerTeam />} />
                         <Route path="configuration" element={<ConfigurationManager />} />
