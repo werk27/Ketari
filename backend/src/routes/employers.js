@@ -12,7 +12,7 @@ const {
     listEmployers,
     setEmployerStatus
 } = require('../controllers/employerController');
-const { protect, can, withEmployerScope } = require('../middleware/auth');
+const { protect, can, withEmployerScope, requireActiveEmployer } = require('../middleware/auth');
 const { CAPABILITIES } = require('../config/permissions');
 
 // ============================================
@@ -30,7 +30,11 @@ router.get('/me/overview', protect, withEmployerScope, getOverview);
 
 // HR team management belongs to the employer that owns the organization
 router.get('/me/team', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, getTeam);
-router.post('/me/team', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, addTeamMember);
+// Adding people is gated on verification: an unapproved organization must not
+// be able to build a team and start collecting applicants' personal data.
+// Viewing, editing and removing existing members stay open so an organization
+// can still correct its own details while it waits.
+router.post('/me/team', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, requireActiveEmployer, addTeamMember);
 router.put('/me/team/:userId', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, updateTeamMember);
 router.delete('/me/team/:userId', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, removeTeamMember);
 

@@ -17,7 +17,7 @@ const {
     getPendingVacancies,
     getHRExperts
 } = require('../controllers/jobController');
-const { protect, authorize, can, withEmployerScope, optionalAuth } = require('../middleware/auth');
+const { protect, authorize, can, withEmployerScope, requireActiveEmployer, optionalAuth } = require('../middleware/auth');
 const { CAPABILITIES } = require('../config/permissions');
 
 // @route   POST /api/jobs
@@ -27,6 +27,7 @@ router.post('/', [
     protect,
     can(CAPABILITIES.VACANCY_CREATE),
     withEmployerScope,
+    requireActiveEmployer,
     body('title').notEmpty().withMessage('Job title is required'),
     body('department').notEmpty().withMessage('Department is required'),
     body('description').notEmpty().withMessage('Job description is required'),
@@ -71,12 +72,12 @@ router.post('/:id/save', protect, authorize('candidate'), toggleSaveJob);
 // @route   PUT /api/jobs/:id/submit
 // @desc    Submit a draft vacancy for HR Manager approval
 // @access  Private (HR Expert)
-router.put('/:id/submit', protect, can(CAPABILITIES.VACANCY_SUBMIT), withEmployerScope, submitJob);
+router.put('/:id/submit', protect, can(CAPABILITIES.VACANCY_SUBMIT), withEmployerScope, requireActiveEmployer, submitJob);
 
 // @route   PUT /api/jobs/:id/approve
 // @desc    Approve and publish a vacancy
 // @access  Private (HR Manager)
-router.put('/:id/approve', protect, can(CAPABILITIES.VACANCY_APPROVE), withEmployerScope, approveJob);
+router.put('/:id/approve', protect, can(CAPABILITIES.VACANCY_APPROVE), withEmployerScope, requireActiveEmployer, approveJob);
 
 // @route   PUT /api/jobs/:id/reject
 // @desc    Reject a vacancy back to the HR Expert with feedback

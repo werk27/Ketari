@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Employer = require('../models/Employer');
 const { userCan, capabilitiesFor, ORG_ROLES } = require('../config/permissions');
 
 // Protect routes
@@ -99,6 +100,65 @@ exports.withEmployerScope = async (req, res, next) => {
 
     req.employerId = user.employer;
     next();
+};
+
+/**
+ * Verification guard: blocks organizations that an administrator has not
+ * approved yet.
+ *
+ * A public employer sign-up creates its organization with status 'pending' and
+ * nothing else re-checks that status, so an unverified - possibly fabricated -
+ * organization could still invite staff and publish vacancies, and then collect
+ * real applicants' personal data. Mount this after withEmployerScope on every
+ * route that lets an organization act rather than just read.
+ */
+exports.requireActiveEmployer = async (req, res, next) => {
+    // Platform administrators operate above the tenant boundary.
+    if (req.user?.role === 'admin') {
+        return next();
+    }
+
+    const employerId = req.employerId || req.user?.employer;
+
+    if (!employerId) {
+        return res.status(403).json({
+            success: false,
+            message: 'Your account is not linked to an organization.'
+        });
+    }
+
+    try {
+        const employer = await Employer.findById(employerId).select('name status');
+
+        if (!employer) {
+            return res.status(403).json({
+                success: false,
+                message: 'Your organization no longer exists. Contact the platform administrator.'
+            });
+        }
+
+        if (employer.status !== 'active') {
+            const reason = {
+                pending: 'is still awaiting verification by the platform administrator',
+                suspended: 'has been suspended',
+                inactive: 'is no longer active'
+            }[employer.status] || 'is not active';
+
+            return res.status(403).json({
+                success: false,
+                code: 'EMPLOYER_NOT_VERIFIED',
+                employerStatus: employer.status,
+                message: `Your organization (${employer.name}) ${reason}. `
+                    + 'You cannot publish vacancies or add team members until it is approved.'
+            });
+        }
+
+        req.employer = employer;
+        next();
+    } catch (error) {
+        console.error('requireActiveEmployer error:', error);
+        return res.status(500).json({ success: false, message: 'Server Error' });
+    }
 };
 
 /** Expose the caller's effective capabilities (used by the frontend to build navigation). */

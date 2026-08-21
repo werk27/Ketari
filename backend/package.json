@@ -12,6 +12,7 @@
     "db:backup:auto": "node scripts/backupDaily.js",
     "db:pull": "node scripts/dbSync.js pull",
     "test:login": "node scripts/loginSelfTest.js",
+    "test:employer-verification": "node scripts/employerVerificationSelfTest.js",
     "test:hiring": "node scripts/hiringFlowSelfTest.js"
   },
   "dependencies": {

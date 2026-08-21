@@ -88,8 +88,17 @@ const EmployerDashboard = () => {
                 {org?.status === 'pending' && (
                     <div className="mt-3 p-2 rounded" style={{ background: '#FFFBEB', border: '1px solid #FCD34D' }}>
                         <div className="text-dark" style={{ fontSize: '0.8rem' }}>
-                            Your organization is awaiting verification by the System Administrator.
-                            Vacancies stay private until it is activated.
+                            <strong>Awaiting verification.</strong> The System Administrator has not approved
+                            your organization yet, so you cannot publish vacancies or add HR team members.
+                            You can still complete your organization profile while you wait.
+                        </div>
+                    </div>
+                )}
+                {(org?.status === 'suspended' || org?.status === 'inactive') && (
+                    <div className="mt-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}>
+                        <div className="text-dark" style={{ fontSize: '0.8rem' }}>
+                            <strong>Organization {org.status}.</strong> Publishing vacancies and adding team
+                            members are disabled. Contact the System Administrator.
                         </div>
                     </div>
                 )}
