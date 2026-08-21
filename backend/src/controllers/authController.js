@@ -487,3 +487,113 @@ exports.verifyResetToken = async (req, res) => {
         });
     }
 };
+
+/**
+ * Look up a pending employee activation without consuming it, so the page can
+ * greet the person by name and fail early on a stale link.
+ */
+// @desc    Check an employee activation token
+// @route   GET /api/auth/activate-employee/:token
+// @access  Public
+exports.verifyEmployeeActivation = async (req, res) => {
+    try {
+        const user = await User.findOne({
+            employeeActivationToken: User.hashActivationToken(req.params.token),
+            employeeActivationExpire: { $gt: Date.now() }
+        }).select('name email pendingEmployerActivation');
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: 'This activation link is invalid or has expired. Ask your HR team to send a new one.'
+            });
+        }
+
+        const organization = user.pendingEmployerActivation
+            ? await Employer.findById(user.pendingEmployerActivation).select('name')
+            : null;
+
+        res.status(200).json({
+            success: true,
+            name: user.name,
+            email: user.email,
+            organization: organization ? organization.name : null
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+/**
+ * Complete employee activation.
+ *
+ * Being hired records the employment but does not grant the employee
+ * workspace; this is where that happens, on an action the person takes
+ * themselves. Setting a password is optional because the account already
+ * exists from when they applied - they are not a new user, and forcing a reset
+ * on someone who remembers their password only adds a way to get locked out.
+ */
+// @desc    Activate a hired candidate's employee account
+// @route   POST /api/auth/activate-employee/:token
+// @access  Public
+exports.activateEmployee = async (req, res) => {
+    try {
+        const { password } = req.body;
+
+        if (password !== undefined && String(password).length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: 'A new password must be at least 6 characters.'
+            });
+        }
+
+        const user = await User.findOne({
+            employeeActivationToken: User.hashActivationToken(req.params.token),
+            employeeActivationExpire: { $gt: Date.now() }
+        }).select('+password +employeeActivationToken +employeeActivationExpire');
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: 'This activation link is invalid or has expired. Ask your HR team to send a new one.'
+            });
+        }
+
+        const employerId = user.pendingEmployerActivation;
+        if (!employerId) {
+            return res.status(400).json({
+                success: false,
+                message: 'This activation is not linked to an organization. Contact your HR team.'
+            });
+        }
+
+        // A hire only ever grants the employee role. Any other role would hand
+        // over a workspace the person was never given, so this link can never
+        // widen access beyond the employee portal.
+        user.role = 'employee';
+        user.employer = employerId;
+        user.status = 'active';
+
+        if (password) {
+            user.password = password; // the pre-save hook hashes it
+        }
+
+        // Single use.
+        user.employeeActivationToken = null;
+        user.employeeActivationExpire = null;
+        user.pendingEmployerActivation = null;
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Your employee account is active.',
+            token: generateToken(user._id),
+            user: buildAuthPayload(user),
+            organization: await loadOrganization(user)
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};

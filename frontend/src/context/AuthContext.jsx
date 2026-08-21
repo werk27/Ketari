@@ -173,6 +173,9 @@ export const AuthProvider = ({ children }) => {
         register,
         logout,
         updateProfile,
+        // Exposed so a flow that already holds a fresh session - employee
+        // activation - can adopt it without a second sign-in round trip.
+        applySession,
         reloadUser: loadUser,
         isAuthenticated: !!user,
         isCandidate: user?.role === 'candidate',

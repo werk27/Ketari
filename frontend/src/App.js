@@ -11,6 +11,7 @@ import Footer from './components/common/Footer';
 import Home from './components/Home';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
+import ActivateEmployee from './components/auth/ActivateEmployee';
 import JobSearch from './components/candidate/JobSearch';
 import Dashboard from './components/candidate/Dashboard';
 import ApplyJob from './components/candidate/ApplyJob';
@@ -88,6 +89,10 @@ function AppContent() {
                     <Route path="/" element={<Home />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    {/* Reached from the activation link a hired candidate receives.
+                        Public because they are not yet an employee - the link is
+                        what grants that. */}
+                    <Route path="/activate-employee/:token" element={<ActivateEmployee />} />
                     <Route path="/jobs" element={<JobSearch />} />
                     <Route path="/privacy" element={<PrivacyPolicy />} />
                     <Route path="/terms" element={<TermsOfService />} />

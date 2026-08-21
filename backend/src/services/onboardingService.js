@@ -3,6 +3,7 @@ const Resume = require('../models/Resume');
 const User = require('../models/User');
 const audit = require('./auditService');
 const notifications = require('./notificationService');
+const email = require('./emailService');
 const { HR_ROLES } = require('../config/permissions');
 
 /**
@@ -49,7 +50,7 @@ const splitName = (fullName = '') => {
  */
 exports.createEmployeeFromApplication = async (application, req) => {
     const existing = await Employee.findOne({ 'recruitment.application': application._id });
-    if (existing) return { employee: existing, created: false };
+    if (existing) return { employee: existing, created: false, activationSent: false };
 
     const candidate = await User.findById(application.applicant);
     if (!candidate) {
@@ -128,20 +129,36 @@ exports.createEmployeeFromApplication = async (application, req) => {
         status: 'active'
     });
 
-    // The candidate becomes a member of staff, so their account moves to the
-    // employee role and joins the organization - this is what gives them the
-    // employee self-service workspace.
-    candidate.role = 'employee';
-    candidate.employer = employerId;
+    // Being hired records the employment; it does not by itself hand over the
+    // employee workspace. The role only changes when the person follows the
+    // activation link, so a candidate who is signed in is not moved into a
+    // different workspace mid-session by a decision someone else just made.
+    // Their role stays 'candidate' until then, which also keeps their own
+    // application history reachable.
+    const activationToken = candidate.getEmployeeActivationToken(employerId);
     await candidate.save({ validateBeforeSave: false });
+
+    const activationUrl =
+        `${process.env.FRONTEND_URL || 'http://localhost:3000'}/activate-employee/${activationToken}`;
 
     await notifications.notify({
         user: candidate._id,
         employer: employerId,
         type: 'account_update',
-        title: 'Welcome - complete your profile',
-        message: `You have been hired${job ? ` as ${job.title}` : ''}. Please complete your employee profile.`,
-        link: '/employee/onboarding'
+        title: 'You have been hired - activate your employee account',
+        message: `Congratulations, you have been hired${job ? ` as ${job.title}` : ''}. `
+            + 'Activate your employee account to complete your profile.',
+        link: `/activate-employee/${activationToken}`
+    });
+
+    // Mail is best effort: SMTP may not be configured, and a hiring decision
+    // that is already saved must not fail because of it. The in-app
+    // notification above always reaches them.
+    await email.sendEmployeeActivation({
+        to: candidate.email,
+        name: candidate.name,
+        jobTitle: job ? job.title : '',
+        activationUrl
     });
 
     await notifications.notifyRoles({
@@ -159,10 +176,10 @@ exports.createEmployeeFromApplication = async (application, req) => {
         entityId: employee._id,
         details: `Employee profile created for ${candidate.name} from approved hire`,
         from: 'candidate',
-        to: 'employee'
+        to: 'employee (pending activation)'
     });
 
-    return { employee, created: true };
+    return { employee, created: true, activationSent: true };
 };
 
 exports.nextEmployeeId = nextEmployeeId;

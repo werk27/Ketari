@@ -14,6 +14,7 @@
     "test:login": "node scripts/loginSelfTest.js",
     "test:employer-verification": "node scripts/employerVerificationSelfTest.js",
     "test:candidate-privacy": "node scripts/candidatePrivacySelfTest.js",
+    "test:hiring-activation": "node scripts/hiringActivationSelfTest.js",
     "test:hiring": "node scripts/hiringFlowSelfTest.js"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "mongoose": "^7.5.0",
     "multer": "^1.4.5-lts.1",
     "natural": "^6.10.4",
+    "nodemailer": "^9.0.5",
     "pdf-parse": "^1.1.1"
   },
   "devDependencies": {

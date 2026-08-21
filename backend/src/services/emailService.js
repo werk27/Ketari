@@ -1,45 +1,127 @@
-const nodemailer = require('nodemailer');
+/**
+ * Outgoing mail.
+ *
+ * Every send goes through `deliver`, which returns a result instead of
+ * throwing. Mail is a side effect of an action that has already been recorded -
+ * a hiring decision, a password reset - and SMTP is frequently not configured
+ * in development, so a failure here must never roll back or break the caller.
+ * Each of these actions also raises an in-app notification, which is what the
+ * user actually depends on.
+ *
+ * nodemailer is loaded defensively for the same reason: this module previously
+ * required it at the top level while the package was not installed, which is
+ * why nothing imported it - doing so would have stopped the server booting.
+ */
+let nodemailer = null;
+try {
+    // eslint-disable-next-line global-require
+    nodemailer = require('nodemailer');
+} catch (error) {
+    console.warn('Email disabled: the nodemailer package is not installed.');
+}
 
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE || 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD
+const isConfigured = () =>
+    Boolean(nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD);
+
+let cached = null;
+const getTransporter = () => {
+    if (!isConfigured()) return null;
+    if (!cached) {
+        cached = nodemailer.createTransport({
+            service: process.env.EMAIL_SERVICE || 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASSWORD
+            }
+        });
     }
-});
+    return cached;
+};
+
+const deliver = async (mailOptions, label) => {
+    const transporter = getTransporter();
+    if (!transporter) {
+        console.log(`Email skipped (${label}): EMAIL_USER / EMAIL_PASSWORD are not set.`);
+        return { sent: false, reason: 'not_configured' };
+    }
+    try {
+        await transporter.sendMail({ from: process.env.EMAIL_USER, ...mailOptions });
+        return { sent: true };
+    } catch (error) {
+        console.error(`Email failed (${label}): ${error.message}`);
+        return { sent: false, reason: error.message };
+    }
+};
+
+const shell = (title, body) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #2c3e8f;">${title}</h1>
+        ${body}
+        <hr style="border: 1px solid #eee;">
+        <p style="color: #888; font-size: 12px;">© ${new Date().getFullYear()} KETARI - Sidama Innovation and Technology Agency</p>
+    </div>
+`;
+
+/**
+ * Invite a newly hired candidate to activate their employee account.
+ *
+ * Carries a one-time link, never a password: a password mailed in clear text
+ * stays readable in the mailbox indefinitely.
+ */
+exports.sendEmployeeActivation = async ({ to, name, jobTitle, activationUrl }) =>
+    deliver({
+        to,
+        subject: 'You have been hired - activate your employee account',
+        html: shell('Congratulations 🎉', `
+            <p>Dear <strong>${name}</strong>,</p>
+            <p>You have been hired${jobTitle ? ` as <strong>${jobTitle}</strong>` : ''}.</p>
+            <p>Activate your employee account to complete your profile and reach the employee portal:</p>
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="${activationUrl}" style="background: #2c3e8f; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                    Activate my account
+                </a>
+            </div>
+            <p>This link expires in <strong>7 days</strong>. You will be asked to choose a password.</p>
+            <p style="color:#888;font-size:12px;">If the button does not work, paste this into your browser:<br>${activationUrl}</p>
+        `)
+    }, 'employee activation');
+
+/** Tell a candidate their application was unsuccessful. */
+exports.sendApplicationRejected = async ({ to, name, jobTitle, reason }) =>
+    deliver({
+        to,
+        subject: `Application update: ${jobTitle || 'your application'}`,
+        html: shell('Application update', `
+            <p>Dear <strong>${name}</strong>,</p>
+            <p>Thank you for applying${jobTitle ? ` for <strong>${jobTitle}</strong>` : ''}. After careful
+               consideration your application was not successful on this occasion.</p>
+            ${reason ? `<p><strong>Feedback:</strong> ${reason}</p>` : ''}
+            <p>Your profile stays on the platform, and you are welcome to apply for future vacancies.</p>
+            <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/candidate/dashboard" style="color:#2c3e8f;">View your applications →</a></p>
+        `)
+    }, 'application rejected');
 
 // Send welcome email
-exports.sendWelcomeEmail = async (userEmail, userName) => {
-    const mailOptions = {
-        from: process.env.EMAIL_USER,
+exports.sendWelcomeEmail = async (userEmail, userName) =>
+    deliver({
         to: userEmail,
         subject: 'Welcome to KETARI!',
-        html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h1 style="color: #2c3e8f;">Welcome to KETARI! 🎉</h1>
-                <p>Dear <strong>${userName}</strong>,</p>
-                <p>Thank you for joining KETARI - the intelligent job matching and recruitment automation platform for the Sidama Innovation and Technology Agency.</p>
-                <p>Here's what you can do next:</p>
-                <ul>
-                    <li>📝 Complete your profile</li>
-                    <li>📄 Upload your resume</li>
-                    <li>🔍 Browse available jobs</li>
-                    <li>📋 Apply for positions that match your skills</li>
-                </ul>
-                <p>Get started now: <a href="${process.env.FRONTEND_URL}/login" style="color: #2c3e8f;">Login to your account</a></p>
-                <hr style="border: 1px solid #eee;">
-                <p style="color: #888; font-size: 12px;">© ${new Date().getFullYear()} KETARI - Sidama Innovation and Technology Agency</p>
-            </div>
-        `
-    };
-    await transporter.sendMail(mailOptions);
-};
+        html: shell('Welcome to KETARI! 🎉', `
+            <p>Dear <strong>${userName}</strong>,</p>
+            <p>Thank you for joining KETARI - the intelligent job matching and recruitment automation platform for the Sidama Innovation and Technology Agency.</p>
+            <ul>
+                <li>📝 Complete your profile</li>
+                <li>📄 Upload your resume</li>
+                <li>🔍 Browse available jobs</li>
+                <li>📋 Apply for positions that match your skills</li>
+            </ul>
+            <p>Get started now: <a href="${process.env.FRONTEND_URL}/login" style="color: #2c3e8f;">Login to your account</a></p>
+        `)
+    }, 'welcome');
 
 // Send application confirmation email
 exports.sendApplicationConfirmation = async (userEmail, userName, jobTitle, companyName) => {
     const mailOptions = {
-        from: process.env.EMAIL_USER,
         to: userEmail,
         subject: `Application Confirmation: ${jobTitle}`,
         html: `
@@ -54,13 +136,12 @@ exports.sendApplicationConfirmation = async (userEmail, userName, jobTitle, comp
             </div>
         `
     };
-    await transporter.sendMail(mailOptions);
+    return deliver(mailOptions, 'legacy');
 };
 
 // Send interview invitation email
 exports.sendInterviewInvitation = async (userEmail, userName, jobTitle, companyName, interviewDate, interviewLocation, notes) => {
     const mailOptions = {
-        from: process.env.EMAIL_USER,
         to: userEmail,
         subject: `Interview Invitation: ${jobTitle}`,
         html: `
@@ -81,7 +162,7 @@ exports.sendInterviewInvitation = async (userEmail, userName, jobTitle, companyN
             </div>
         `
     };
-    await transporter.sendMail(mailOptions);
+    return deliver(mailOptions, 'legacy');
 };
 
 // Send application status update email
@@ -105,7 +186,6 @@ exports.sendStatusUpdate = async (userEmail, userName, jobTitle, status, notes) 
     };
 
     const mailOptions = {
-        from: process.env.EMAIL_USER,
         to: userEmail,
         subject: `Application Status Update: ${jobTitle}`,
         html: `
@@ -124,13 +204,12 @@ exports.sendStatusUpdate = async (userEmail, userName, jobTitle, status, notes) 
             </div>
         `
     };
-    await transporter.sendMail(mailOptions);
+    return deliver(mailOptions, 'legacy');
 };
 
 // Send password reset email
 exports.sendPasswordResetEmail = async (userEmail, userName, resetUrl) => {
     const mailOptions = {
-        from: process.env.EMAIL_USER,
         to: userEmail,
         subject: 'Password Reset Request',
         html: `
@@ -150,5 +229,5 @@ exports.sendPasswordResetEmail = async (userEmail, userName, resetUrl) => {
             </div>
         `
     };
-    await transporter.sendMail(mailOptions);
+    return deliver(mailOptions, 'legacy');
 };

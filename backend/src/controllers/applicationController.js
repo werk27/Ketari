@@ -7,6 +7,8 @@ const { calculateMatchScore, calculateMatchDetails } = require('../services/matc
 const { createEmployeeFromApplication } = require('../services/onboardingService');
 const auditService = require('../services/auditService');
 const notificationService = require('../services/notificationService');
+const emailService = require('../services/emailService');
+const User = require('../models/User');
 
 // Statuses in which a vacancy still accepts applications.
 const OPEN_STATUSES = ['published', 'approved', 'open'];
@@ -442,12 +444,15 @@ exports.decideApplication = async (req, res) => {
         let onboarding = null;
         if (outcome === 'approved' && finalStatus === 'hired') {
             try {
-                const { employee, created } = await createEmployeeFromApplication(application, req);
+                const { employee, created, activationSent } = await createEmployeeFromApplication(application, req);
                 onboarding = {
                     employeeId: employee.employeeId,
                     employee: employee._id,
                     status: employee.onboarding.status,
-                    created
+                    created,
+                    // The hire does not grant the employee workspace; the person
+                    // does that themselves through the activation link.
+                    accountActivationPending: created && activationSent
                 };
             } catch (onboardingError) {
                 console.error('Employee onboarding failed:', onboardingError);
@@ -474,6 +479,21 @@ exports.decideApplication = async (req, res) => {
                 : `Your application was not successful.${reason ? ` Reason: ${reason}` : ''}`,
             link: '/candidate/dashboard'
         });
+
+        // A rejected candidate gets no activation mail, so this is the only
+        // message they receive by email. Sending is best effort - the in-app
+        // notification above is the guaranteed channel.
+        if (outcome === 'rejected') {
+            const candidate = await User.findById(application.applicant).select('name email');
+            if (candidate) {
+                await emailService.sendApplicationRejected({
+                    to: candidate.email,
+                    name: candidate.name,
+                    jobTitle: application.job?.title || '',
+                    reason: reason || ''
+                });
+            }
+        }
 
         res.status(200).json({
             success: true,

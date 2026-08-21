@@ -8,7 +8,9 @@ const {
     updateProfile,
     forgotPassword,
     resetPassword,
-    verifyResetToken
+    verifyResetToken,
+    verifyEmployeeActivation,
+    activateEmployee
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 
@@ -63,5 +65,15 @@ router.put('/resetpassword/:resetToken', [
 // @desc    Verify if reset token is valid
 // @access  Public
 router.get('/verifyresettoken/:resetToken', verifyResetToken);
+
+// @route   GET /api/auth/activate-employee/:token
+// @desc    Check a hired candidate's activation link
+// @access  Public
+router.get('/activate-employee/:token', verifyEmployeeActivation);
+
+// @route   POST /api/auth/activate-employee/:token
+// @desc    Activate the employee account of a hired candidate
+// @access  Public
+router.post('/activate-employee/:token', activateEmployee);
 
 module.exports = router;

@@ -189,6 +189,32 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+
+    // ============================================
+    // EMPLOYEE ACTIVATION
+    // ============================================
+    // Being hired does not by itself grant access to the employee workspace.
+    // The role is only changed when the person follows the activation link, so
+    // a candidate who happens to be signed in is not moved into a different
+    // workspace mid-session by a decision someone else made.
+    // Only the hash of the token is stored, so a leaked database row cannot be
+    // used to activate an account - the same treatment as the reset token.
+    employeeActivationToken: {
+        type: String,
+        default: null,
+        select: false
+    },
+    employeeActivationExpire: {
+        type: Date,
+        default: null,
+        select: false
+    },
+    /** Organization the person joins once activation completes. */
+    pendingEmployerActivation: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employer',
+        default: null
+    },
     createdAt: {
         type: Date,
         default: Date.now
@@ -242,5 +268,29 @@ UserSchema.methods.getResetPasswordToken = function() {
 
     return resetToken;
 };
+
+/**
+ * Issue an employee activation token and return the raw value to send out.
+ *
+ * Valid for seven days rather than the ten minutes a password reset gets: a
+ * reset is a response to something the person just did, whereas this arrives
+ * unprompted after a hiring decision and may sit unread over a weekend.
+ */
+UserSchema.methods.getEmployeeActivationToken = function(employerId) {
+    const token = crypto.randomBytes(32).toString('hex');
+
+    this.employeeActivationToken = crypto
+        .createHash('sha256')
+        .update(token)
+        .digest('hex');
+    this.employeeActivationExpire = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    this.pendingEmployerActivation = employerId;
+
+    return token;
+};
+
+/** Hash a raw activation token for lookup. */
+UserSchema.statics.hashActivationToken = (token) =>
+    crypto.createHash('sha256').update(String(token)).digest('hex');
 
 module.exports = mongoose.model('User', UserSchema);
