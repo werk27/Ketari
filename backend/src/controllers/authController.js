@@ -111,12 +111,27 @@ exports.register = async (req, res) => {
         // An employer signup creates the organization it will own. HR Experts and
         // HR Managers are later added as members of this organization by the employer.
         if (assignedRole === 'employer') {
+            const org = company || {};
             const organization = await Employer.create({
-                name: (company && company.name) ? company.name : `${name}'s Organization`,
-                description: (company && company.description) || '',
-                website: (company && company.website) || '',
-                contact: { email: normalizedEmail, contactPerson: name },
-                address: { city: (company && company.location) || '' },
+                name: org.name ? org.name : `${name}'s Organization`,
+                legalName: org.legalName || org.name || '',
+                organizationType: org.organizationType || 'private_company',
+                tin: org.tin || '',
+                businessLicenceNumber: org.businessLicenceNumber || '',
+                licenceExpiryDate: org.licenceExpiryDate || null,
+                industry: org.industry || '',
+                description: org.description || '',
+                website: org.website || '',
+                contact: {
+                    email: org.contactEmail || normalizedEmail,
+                    phone: org.phone || '',
+                    contactPerson: name
+                },
+                address: {
+                    street: org.street || '',
+                    city: org.city || org.location || '',
+                    region: org.region || ''
+                },
                 owner: user._id,
                 status: 'pending'
             });

@@ -16,6 +16,18 @@ const fs = require('fs');
  */
 const UPLOADS_ROOT = path.join(__dirname, '..', '..', 'uploads');
 
+/**
+ * Files that must never be served statically.
+ *
+ * app.js exposes UPLOADS_ROOT through express.static with no authentication, so
+ * anything stored there is readable by anyone holding the URL. Employer
+ * verification evidence - trade licences, TIN certificates - identifies a real
+ * organization and cannot live under that folder. These are streamed instead by
+ * an authenticated route that checks the caller owns the record or is an
+ * administrator.
+ */
+const PRIVATE_ROOT = path.join(__dirname, '..', '..', 'private-uploads');
+
 const UPLOAD_PATHS = {
     root: UPLOADS_ROOT,
     profiles: path.join(UPLOADS_ROOT, 'profiles'),
@@ -23,9 +35,14 @@ const UPLOAD_PATHS = {
     documents: path.join(UPLOADS_ROOT, 'documents')
 };
 
+const PRIVATE_PATHS = {
+    root: PRIVATE_ROOT,
+    verification: path.join(PRIVATE_ROOT, 'verification')
+};
+
 /** Create every upload directory if it does not already exist. */
 const ensureUploadDirectories = () => {
-    Object.values(UPLOAD_PATHS).forEach(dir => {
+    [...Object.values(UPLOAD_PATHS), ...Object.values(PRIVATE_PATHS)].forEach(dir => {
         if (!fs.existsSync(dir)) {
             fs.mkdirSync(dir, { recursive: true });
         }
@@ -49,6 +66,8 @@ const toAbsolutePath = (publicPath) => {
 module.exports = {
     UPLOADS_ROOT,
     UPLOAD_PATHS,
+    PRIVATE_ROOT,
+    PRIVATE_PATHS,
     ensureUploadDirectories,
     toPublicPath,
     toAbsolutePath

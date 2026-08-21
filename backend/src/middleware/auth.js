@@ -140,6 +140,7 @@ exports.requireActiveEmployer = async (req, res, next) => {
         if (employer.status !== 'active') {
             const reason = {
                 pending: 'is still awaiting verification by the platform administrator',
+                rejected: 'was not approved',
                 suspended: 'has been suspended',
                 inactive: 'is no longer active'
             }[employer.status] || 'is not active';
@@ -148,6 +149,7 @@ exports.requireActiveEmployer = async (req, res, next) => {
                 success: false,
                 code: 'EMPLOYER_NOT_VERIFIED',
                 employerStatus: employer.status,
+                rejectionReason: employer.rejectionReason || undefined,
                 message: `Your organization (${employer.name}) ${reason}. `
                     + 'You cannot publish vacancies or add team members until it is approved.'
             });

@@ -1,8 +1,11 @@
+const path = require('path');
+const fs = require('fs');
 const Employer = require('../models/Employer');
 const User = require('../models/User');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
 const { HR_ROLES, EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
+const { PRIVATE_PATHS } = require('../config/paths');
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
 
@@ -18,7 +21,11 @@ exports.getMyEmployer = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Organization not found' });
         }
 
-        res.status(200).json({ success: true, employer });
+        res.status(200).json({
+            success: true,
+            employer,
+            checklist: employer.verificationChecklist()
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -36,9 +43,15 @@ exports.updateMyEmployer = async (req, res) => {
         }
 
         // Platform-controlled fields can never be self-assigned by an organization.
+        // Verification evidence is included: an employer that could write its own
+        // verificationDocuments or clear its own rejectionReason would be able to
+        // fake having been reviewed.
         const {
             status: _status, owner: _owner, slug: _slug,
-            verifiedAt: _verifiedAt, verifiedBy: _verifiedBy, ...updates
+            verifiedAt: _verifiedAt, verifiedBy: _verifiedBy,
+            verificationDocuments: _docs, rejectionReason: _reason,
+            reviewedAt: _reviewedAt, reviewedBy: _reviewedBy,
+            submittedForReviewAt: _submittedAt, ...updates
         } = req.body;
 
         Object.assign(employer, updates);
@@ -375,18 +388,29 @@ exports.listEmployers = async (req, res) => {
     }
 };
 
-// @desc    Change an employer's platform status (approve / suspend)
+// @desc    Change an employer's platform status (approve / reject / suspend)
 // @route   PUT /api/employers/:id/status
 // @access  Private (System Administrator)
 exports.setEmployerStatus = async (req, res) => {
     try {
-        const { status } = req.body;
-        const allowed = ['pending', 'active', 'suspended', 'inactive'];
+        const { status, reason } = req.body;
+        const allowed = ['pending', 'active', 'rejected', 'suspended', 'inactive'];
 
         if (!allowed.includes(status)) {
             return res.status(400).json({
                 success: false,
                 message: `Status must be one of: ${allowed.join(', ')}`
+            });
+        }
+
+        // A refusal the applicant cannot read gives them nothing to correct, so
+        // turning an organization away requires saying why.
+        const needsReason = ['rejected', 'suspended'].includes(status);
+        if (needsReason && (!reason || !String(reason).trim())) {
+            return res.status(400).json({
+                success: false,
+                message: `A reason is required when marking an organization ${status}, `
+                    + 'so the employer knows what to correct.'
             });
         }
 
@@ -396,6 +420,10 @@ exports.setEmployerStatus = async (req, res) => {
         }
 
         employer.status = status;
+        employer.reviewedAt = new Date();
+        employer.reviewedBy = req.user.id;
+        employer.rejectionReason = needsReason ? String(reason).trim() : '';
+
         if (status === 'active') {
             employer.verifiedAt = new Date();
             employer.verifiedBy = req.user.id;
@@ -403,6 +431,193 @@ exports.setEmployerStatus = async (req, res) => {
         await employer.save();
 
         res.status(200).json({ success: true, message: `Organization marked ${status}`, employer });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Full verification dossier for one organization
+// @route   GET /api/employers/:id/verification
+// @access  Private (System Administrator)
+exports.getVerificationDossier = async (req, res) => {
+    try {
+        const employer = await Employer.findById(req.params.id)
+            .populate('owner', 'name email createdAt')
+            .populate('reviewedBy', 'name')
+            .populate('verifiedBy', 'name');
+
+        if (!employer) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        const checklist = employer.verificationChecklist();
+
+        // A duplicate TIN usually means the same organization applying twice, or
+        // one impersonating another, so surface it rather than making the
+        // administrator search for it.
+        const duplicates = employer.tin
+            ? await Employer.find({ tin: employer.tin, _id: { $ne: employer._id } })
+                .select('name status createdAt')
+            : [];
+
+        res.status(200).json({
+            success: true,
+            employer,
+            checklist,
+            unmet: checklist.filter(item => !item.met).map(item => item.label),
+            duplicates
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Stream one verification document
+// @route   GET /api/employers/:id/documents/:docId
+// @access  Private (System Administrator, or the organization that owns it)
+exports.getVerificationDocument = async (req, res) => {
+    try {
+        const employer = await Employer.findById(req.params.id).select('verificationDocuments');
+        if (!employer) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        // These files identify a real organization, so they are never public:
+        // only an administrator or a member of the owning organization may read
+        // one. This is why they live outside the statically served uploads root.
+        const isAdmin = req.user.role === 'admin';
+        const ownsIt = String(req.user.employer || '') === String(employer._id);
+        if (!isAdmin && !ownsIt) {
+            return res.status(403).json({ success: false, message: 'Not authorized to view this document' });
+        }
+
+        const doc = employer.verificationDocuments.id(req.params.docId);
+        if (!doc) {
+            return res.status(404).json({ success: false, message: 'Document not found' });
+        }
+
+        const absolute = path.join(PRIVATE_PATHS.verification, path.basename(doc.path));
+        if (!fs.existsSync(absolute)) {
+            return res.status(404).json({ success: false, message: 'The stored file is missing' });
+        }
+
+        res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `inline; filename="${doc.originalName || 'document'}"`);
+        fs.createReadStream(absolute).pipe(res);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Attach a verification document to the caller's organization
+// @route   POST /api/employers/me/documents
+// @access  Private (Employer owner)
+exports.uploadVerificationDocument = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'Please attach a file' });
+        }
+
+        const employer = await Employer.findById(req.employerId);
+        if (!employer) {
+            fs.unlink(req.file.path, () => {});
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        employer.verificationDocuments.push({
+            label: (req.body.label || 'Supporting document').slice(0, 120),
+            path: path.basename(req.file.path),
+            originalName: req.file.originalname,
+            mimeType: req.file.mimetype,
+            size: req.file.size
+        });
+        await employer.save();
+
+        res.status(201).json({
+            success: true,
+            message: 'Document uploaded',
+            documents: employer.verificationDocuments
+        });
+    } catch (error) {
+        console.error(error);
+        if (req.file) fs.unlink(req.file.path, () => {});
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Remove one of the caller's verification documents
+// @route   DELETE /api/employers/me/documents/:docId
+// @access  Private (Employer owner)
+exports.deleteVerificationDocument = async (req, res) => {
+    try {
+        const employer = await Employer.findById(req.employerId);
+        if (!employer) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        const doc = employer.verificationDocuments.id(req.params.docId);
+        if (!doc) {
+            return res.status(404).json({ success: false, message: 'Document not found' });
+        }
+
+        const absolute = path.join(PRIVATE_PATHS.verification, path.basename(doc.path));
+        fs.unlink(absolute, () => {});
+        doc.deleteOne();
+        await employer.save();
+
+        res.status(200).json({ success: true, message: 'Document removed', documents: employer.verificationDocuments });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Submit (or resubmit) the organization for administrator review
+// @route   POST /api/employers/me/submit-verification
+// @access  Private (Employer owner)
+exports.submitForVerification = async (req, res) => {
+    try {
+        const employer = await Employer.findById(req.employerId);
+        if (!employer) {
+            return res.status(404).json({ success: false, message: 'Organization not found' });
+        }
+
+        if (employer.status === 'active') {
+            return res.status(400).json({ success: false, message: 'This organization is already verified.' });
+        }
+        if (employer.status === 'suspended') {
+            return res.status(403).json({
+                success: false,
+                message: 'A suspended organization cannot resubmit. Contact the System Administrator.'
+            });
+        }
+
+        // Sending an incomplete application straight to the reviewer wastes a
+        // round trip, so the same checklist is applied before it is accepted.
+        const unmet = employer.verificationChecklist()
+            .filter(item => !item.met && item.key !== 'representative');
+
+        if (unmet.length) {
+            return res.status(400).json({
+                success: false,
+                message: 'Your application is not complete yet.',
+                missing: unmet.map(item => item.label)
+            });
+        }
+
+        employer.status = 'pending';
+        employer.submittedForReviewAt = new Date();
+        employer.rejectionReason = '';
+        await employer.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Submitted for verification. An administrator will review your organization.',
+            employer
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });

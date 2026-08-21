@@ -70,6 +70,11 @@ mongodb/
 dump/
 backend/backups/
 
+# Employer verification evidence (trade licences, TIN certificates).
+# Never committed: these identify real organizations.
+backend/private-uploads/
+private-uploads/
+
 # Local scratch scripts (may contain connection strings)
 backend/test-mongo.js
 

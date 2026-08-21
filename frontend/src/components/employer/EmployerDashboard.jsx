@@ -89,8 +89,21 @@ const EmployerDashboard = () => {
                     <div className="mt-3 p-2 rounded" style={{ background: '#FFFBEB', border: '1px solid #FCD34D' }}>
                         <div className="text-dark" style={{ fontSize: '0.8rem' }}>
                             <strong>Awaiting verification.</strong> The System Administrator has not approved
-                            your organization yet, so you cannot publish vacancies or add HR team members.
-                            You can still complete your organization profile while you wait.
+                            your organization yet, so you cannot publish vacancies or add HR team members.{' '}
+                            <Link to="/employer/profile">Complete your verification details</Link> to speed this up.
+                        </div>
+                    </div>
+                )}
+                {org?.status === 'rejected' && (
+                    <div className="mt-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}>
+                        <div className="text-dark" style={{ fontSize: '0.8rem' }}>
+                            <strong>Verification was not approved.</strong>
+                            {org.rejectionReason && (
+                                <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>
+                            )}
+                            <div className="mt-1">
+                                <Link to="/employer/profile">Correct your details and resubmit</Link>.
+                            </div>
                         </div>
                     </div>
                 )}
@@ -98,7 +111,9 @@ const EmployerDashboard = () => {
                     <div className="mt-3 p-2 rounded" style={{ background: '#FEF2F2', border: '1px solid #FCA5A5' }}>
                         <div className="text-dark" style={{ fontSize: '0.8rem' }}>
                             <strong>Organization {org.status}.</strong> Publishing vacancies and adding team
-                            members are disabled. Contact the System Administrator.
+                            members are disabled.
+                            {org.rejectionReason && <div className="mt-1 fst-italic">“{org.rejectionReason}”</div>}
+                            <div className="mt-1">Contact the System Administrator.</div>
                         </div>
                     </div>
                 )}

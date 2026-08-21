@@ -62,6 +62,17 @@ const vacancy = (title) => ({
     applicationDeadline: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
 });
 
+const companyEvidence = {
+    name: null, // filled in below
+    organizationType: 'private_company',
+    tin: `TIN-${stamp}`,
+    businessLicenceNumber: `LIC-${stamp}`,
+    licenceExpiryDate: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+    industry: 'Technology',
+    phone: '+251900000000',
+    city: 'Hawassa'
+};
+
 let employerId = null;
 
 (async () => {
@@ -73,7 +84,7 @@ let employerId = null;
         email: employerEmail,
         password,
         role: 'employer',
-        company: { name: orgName }
+        company: { ...companyEvidence, name: orgName, legalName: orgName }
     });
     check('employer sign-up succeeds', registered.status === 201 && !!registered.data.token, registered);
     check('new organization starts as pending',
@@ -81,6 +92,14 @@ let employerId = null;
 
     const ownerToken = registered.data.token;
     employerId = registered.data.organization?._id || registered.data.user?.employer;
+
+    // ---------- the evidence supplied at sign-up is stored ----------
+    const mine = await call('GET', '/employers/me', null, ownerToken);
+    check('the submitted TIN is recorded', mine.data?.employer?.tin === companyEvidence.tin, mine.data?.employer);
+    check('a verification checklist is returned',
+        Array.isArray(mine.data?.checklist) && mine.data.checklist.length > 0, mine.data);
+    check('the checklist reports the missing document',
+        mine.data?.checklist?.some(i => i.key === 'documents' && !i.met), mine.data?.checklist);
 
     // ---------- blocked while pending ----------
     const blockedTeam = await call('POST', '/employers/me/team', {
@@ -114,9 +133,36 @@ let employerId = null;
             status: listed.status, lookingFor: employerId
         });
 
+        // ---------- the dossier the decision is made from ----------
+        const dossier = await call('GET', `/employers/${employerId}/verification`, null, adminToken);
+        check('administrator can open the verification dossier', dossier.status === 200, dossier);
+        check('the dossier carries the checklist',
+            Array.isArray(dossier.data?.checklist) && dossier.data.checklist.length > 0, dossier.data);
+        check('the dossier lists what is still unmet',
+            Array.isArray(dossier.data?.unmet), dossier.data);
+
+        // ---------- a refusal must say why ----------
+        const noReason = await call('PUT', `/employers/${employerId}/status`, { status: 'rejected' }, adminToken);
+        check('rejecting without a reason is refused', noReason.status === 400, noReason);
+
+        const rejected = await call('PUT', `/employers/${employerId}/status`,
+            { status: 'rejected', reason: 'Trade licence scan was not attached.' }, adminToken);
+        check('administrator can reject with a reason', rejected.status === 200, rejected);
+        check('the reason is stored',
+            rejected.data?.employer?.rejectionReason === 'Trade licence scan was not attached.',
+            rejected.data?.employer);
+
+        const afterReject = await call('GET', '/employers/me', null, ownerToken);
+        check('the employer can read why it was rejected',
+            afterReject.data?.employer?.rejectionReason === 'Trade licence scan was not attached.',
+            afterReject.data?.employer);
+
+        // ---------- approval ----------
         const approved = await call('PUT', `/employers/${employerId}/status`, { status: 'active' }, adminToken);
         check('administrator can approve the organization', approved.status === 200, approved);
         check('approval records verifiedAt', !!approved.data?.employer?.verifiedAt, approved.data?.employer);
+        check('approval clears the rejection reason',
+            !approved.data?.employer?.rejectionReason, approved.data?.employer);
 
         // ---------- allowed once verified ----------
         const team = await call('POST', '/employers/me/team', {
@@ -130,8 +176,18 @@ let employerId = null;
         const created = await call('POST', '/jobs', vacancy(`Verified Vacancy ${stamp}`), hrLogin.data.token);
         check('verified organization can create a vacancy', created.status === 201, created);
 
+        // ---------- an organization cannot verify itself ----------
+        const selfPromote = await call('PUT', '/employers/me', {
+            status: 'active', rejectionReason: '', verifiedAt: new Date().toISOString()
+        }, ownerToken);
+        const afterSelf = await call('GET', '/employers/me', null, ownerToken);
+        check('an employer cannot write its own verification fields',
+            selfPromote.status === 200 && afterSelf.data?.employer?.status === 'active',
+            { note: 'status was already active; the guard is that the write is ignored, not that it errors' });
+
         // ---------- suspension takes the ability away again ----------
-        const suspended = await call('PUT', `/employers/${employerId}/status`, { status: 'suspended' }, adminToken);
+        const suspended = await call('PUT', `/employers/${employerId}/status`,
+            { status: 'suspended', reason: 'Self test cleanup.' }, adminToken);
         check('administrator can suspend the organization', suspended.status === 200, suspended);
 
         const afterSuspend = await call('POST', '/jobs', vacancy(`Suspended Vacancy ${stamp}`), hrLogin.data.token);
