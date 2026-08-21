@@ -5,10 +5,19 @@ import { toast } from 'react-toastify';
 import {
     FaClipboardCheck, FaBriefcase, FaFileAlt, FaUserFriends, FaCheck, FaTimes
 } from 'react-icons/fa';
-import api from '../../services/api';
+import api, { getImageUrl } from '../../services/api';
+import hrmBackdrop from '../../assets/hrm.jpg';
+import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
+
+/* Same treatment as the employer dashboard: the photograph is darkened from the
+   left so the headline stays legible, then faded into the page background. */
+const HERO_BACKGROUND =
+    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
+     linear-gradient(to bottom, rgba(8,15,31,0.15) 0%, rgba(8,15,31,0) 40%, rgba(8,15,31,0.55) 74%, #080F1F 100%),
+     url(${hrmBackdrop})`;
 
 /**
  * HR Manager dashboard.
@@ -19,6 +28,7 @@ import {
 const HRManagerDashboard = () => {
     const [pending, setPending] = useState([]);
     const [overview, setOverview] = useState(null);
+    const [organization, setOrganization] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -36,6 +46,7 @@ const HRManagerDashboard = () => {
             ]);
             setPending(pendingRes.data.jobs || []);
             setOverview(overviewRes ? overviewRes.data.statistics : null);
+            setOrganization(overviewRes ? overviewRes.data.organization : null);
         } catch (err) {
             setError(err.response?.data?.message || 'Unable to load the approval workspace.');
         } finally {
@@ -84,30 +95,58 @@ const HRManagerDashboard = () => {
     const applications = overview?.applications;
 
     return (
-        <div>
-            <div className="mb-3">
-                <h5 className="fw-bold text-dark mb-1">Review &amp; Approval</h5>
-                <div className="text-muted" style={{ fontSize: '0.82rem' }}>
-                    Supervise recruitment activity and authorise vacancies and hiring decisions.
-                </div>
-            </div>
+        <div className="hero-dash">
+            <section className="dash-hero" style={{ backgroundImage: HERO_BACKGROUND }}>
+                <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+                    <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                        <div className="d-flex align-items-center gap-3 mb-2">
+                            <div className="hero-badge">
+                                {organization?.logo
+                                    ? <img src={getImageUrl(organization.logo)} alt="" />
+                                    : <FaClipboardCheck size={21} />}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                                <h1>Review &amp; Approval</h1>
+                                <span className="hero-sub">
+                                    {organization?.name || 'Your organization'}
+                                    {' · '}HR Manager
+                                </span>
+                            </div>
+                        </div>
+                        <div className="hero-sub">
+                            Supervise recruitment activity and authorise vacancies and hiring decisions.
+                        </div>
+                    </div>
 
-            <div className="row g-3 mb-4">
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Pending Approvals" value={pending.length} icon={FaClipboardCheck} tone="#D97706"
-                              hint="Vacancies awaiting your review" />
+                    <div className="d-flex gap-2 flex-wrap">
+                        <Link to="/hr-manager/shortlists" className="btn btn-sm btn-primary fw-semibold">
+                            Review shortlists
+                        </Link>
+                        <Link to="/hr-manager/applications" className="btn btn-sm btn-light fw-semibold">
+                            All applications
+                        </Link>
+                    </div>
                 </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Active Vacancies" value={vacancies?.active ?? 0} icon={FaBriefcase}
-                              hint="Currently published" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Shortlisted" value={applications?.shortlisted ?? 0} icon={FaUserFriends} tone="#0891B2"
-                              hint="Awaiting your decision" to="/hr-manager/shortlists" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Total Applications" value={applications?.total ?? 0} icon={FaFileAlt} tone="#0EA5E9"
-                              hint="Across the organization" to="/hr-manager/applications" />
+            </section>
+
+            <div className="hero-overlap">
+                <div className="row g-3 mb-4">
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Pending Approvals" value={pending.length} icon={FaClipboardCheck} tone="#D97706"
+                                  hint="Vacancies awaiting your review" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Active Vacancies" value={vacancies?.active ?? 0} icon={FaBriefcase}
+                                  hint="Currently published" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Shortlisted" value={applications?.shortlisted ?? 0} icon={FaUserFriends} tone="#0891B2"
+                                  hint="Awaiting your decision" to="/hr-manager/shortlists" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Total Applications" value={applications?.total ?? 0} icon={FaFileAlt} tone="#0EA5E9"
+                                  hint="Across the organization" to="/hr-manager/applications" />
+                    </div>
                 </div>
             </div>
 
@@ -125,7 +164,7 @@ const HRManagerDashboard = () => {
                 ) : (
                     <div className="d-flex flex-column gap-2">
                         {pending.map(job => (
-                            <div key={job._id} className="p-3 rounded" style={{ border: '1px solid #E2E8F0' }}>
+                            <div key={job._id} className="p-3 rounded row-line">
                                 <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
                                     <div style={{ minWidth: 0, flex: 1 }}>
                                         <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">

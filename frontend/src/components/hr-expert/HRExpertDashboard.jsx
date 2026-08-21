@@ -3,10 +3,19 @@ import { Link } from 'react-router-dom';
 import {
     FaBriefcase, FaFileAlt, FaListAlt, FaPlusCircle, FaClock, FaExclamationTriangle
 } from 'react-icons/fa';
-import api from '../../services/api';
+import api, { getImageUrl } from '../../services/api';
+import hrmBackdrop from '../../assets/hrm.jpg';
+import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
+
+/* Same treatment as the employer dashboard: the photograph is darkened from the
+   left so the headline stays legible, then faded into the page background. */
+const HERO_BACKGROUND =
+    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
+     linear-gradient(to bottom, rgba(8,15,31,0.15) 0%, rgba(8,15,31,0) 40%, rgba(8,15,31,0.55) 74%, #080F1F 100%),
+     url(${hrmBackdrop})`;
 
 /**
  * HR Expert dashboard.
@@ -18,6 +27,7 @@ import {
 const HRExpertDashboard = () => {
     const [jobs, setJobs] = useState([]);
     const [overview, setOverview] = useState(null);
+    const [organization, setOrganization] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -31,6 +41,7 @@ const HRExpertDashboard = () => {
             ]);
             setJobs(jobsRes.data.jobs || []);
             setOverview(overviewRes ? overviewRes.data.statistics : null);
+            setOrganization(overviewRes ? overviewRes.data.organization : null);
         } catch (err) {
             setError(err.response?.data?.message || 'Unable to load your recruitment workspace.');
         } finally {
@@ -66,41 +77,64 @@ const HRExpertDashboard = () => {
     if (error) return <ErrorState message={error} onRetry={load} />;
 
     return (
-        <div>
-            <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                <div>
-                    <h5 className="fw-bold text-dark mb-1">Recruitment Operations</h5>
-                    <div className="text-muted" style={{ fontSize: '0.82rem' }}>
-                        Create vacancies, process applications and prepare shortlists for manager review.
+        <div className="hero-dash">
+            <section className="dash-hero" style={{ backgroundImage: HERO_BACKGROUND }}>
+                <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+                    <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                        <div className="d-flex align-items-center gap-3 mb-2">
+                            <div className="hero-badge">
+                                {organization?.logo
+                                    ? <img src={getImageUrl(organization.logo)} alt="" />
+                                    : <FaBriefcase size={21} />}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                                <h1>Recruitment Operations</h1>
+                                <span className="hero-sub">
+                                    {organization?.name || 'Your organization'}
+                                    {' · '}HR Expert
+                                </span>
+                            </div>
+                        </div>
+                        <div className="hero-sub">
+                            Create vacancies, process applications and prepare shortlists for manager review.
+                        </div>
+                    </div>
+
+                    <div className="d-flex gap-2 flex-wrap">
+                        <Link to="/hr-expert/job-creator" className="btn btn-sm btn-primary fw-semibold d-flex align-items-center gap-2">
+                            <FaPlusCircle size={13} /> New Vacancy
+                        </Link>
+                        <Link to="/hr-expert/vacancies" className="btn btn-sm btn-light fw-semibold">
+                            My vacancies
+                        </Link>
                     </div>
                 </div>
-                <Link to="/hr-expert/job-creator" className="btn btn-primary btn-sm d-flex align-items-center gap-2">
-                    <FaPlusCircle size={13} /> New Vacancy
-                </Link>
-            </div>
+            </section>
 
-            <div className="row g-3 mb-4">
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Live Vacancies" value={stats.live} icon={FaBriefcase}
-                              hint="Published and accepting applications" to="/hr-expert/vacancies" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Awaiting Approval" value={stats.pending} icon={FaClock} tone="#D97706"
-                              hint="With the HR Manager" to="/hr-expert/vacancies" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Drafts" value={stats.drafts} icon={FaListAlt} tone="#64748B"
-                              hint="Not yet submitted" to="/hr-expert/vacancies" />
-                </div>
-                <div className="col-6 col-lg-3">
-                    <StatCard label="Applications" value={overview?.applications?.total ?? stats.applications}
-                              icon={FaFileAlt} tone="#0EA5E9"
-                              hint="Across your organization" to="/hr-expert/applications" />
+            <div className="hero-overlap">
+                <div className="row g-3 mb-4">
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Live Vacancies" value={stats.live} icon={FaBriefcase}
+                                  hint="Published and accepting applications" to="/hr-expert/vacancies" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Awaiting Approval" value={stats.pending} icon={FaClock} tone="#D97706"
+                                  hint="With the HR Manager" to="/hr-expert/vacancies" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Drafts" value={stats.drafts} icon={FaListAlt} tone="#64748B"
+                                  hint="Not yet submitted" to="/hr-expert/vacancies" />
+                    </div>
+                    <div className="col-6 col-lg-3">
+                        <StatCard label="Applications" value={overview?.applications?.total ?? stats.applications}
+                                  icon={FaFileAlt} tone="#0EA5E9"
+                                  hint="Across your organization" to="/hr-expert/applications" />
+                    </div>
                 </div>
             </div>
 
             {stats.rejected > 0 && (
-                <Card className="p-3 mb-4" style={{ borderColor: '#FCD34D', background: '#FFFBEB' }}>
+                <Card className="p-3 mb-4" style={{ borderColor: 'rgba(252,211,77,0.45)', background: 'rgba(180,131,10,0.16)' }}>
                     <div className="d-flex align-items-start gap-3">
                         <FaExclamationTriangle className="text-warning flex-shrink-0 mt-1" />
                         <div>
@@ -182,8 +216,7 @@ const HRExpertDashboard = () => {
                                 {needsAttention.map(job => (
                                     <Link key={job._id} to={`/hr-expert/vacancies/${job._id}/edit`}
                                           className="text-decoration-none">
-                                        <div className="d-flex justify-content-between align-items-center p-2 rounded"
-                                             style={{ border: '1px solid #E2E8F0' }}>
+                                        <div className="d-flex justify-content-between align-items-center p-2 rounded row-line">
                                             <div style={{ minWidth: 0 }}>
                                                 <div className="fw-semibold text-dark text-truncate" style={{ fontSize: '0.84rem' }}>
                                                     {job.title}

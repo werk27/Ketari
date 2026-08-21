@@ -6,7 +6,7 @@ import {
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
 import hrmBackdrop from '../../assets/hrm.jpg';
-import '../../styles/employerDashboard.css';
+import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -64,11 +64,11 @@ const EmployerDashboard = () => {
         + (training?.pendingApproval || 0) + (vacancies?.pendingApproval || 0);
 
     return (
-        <div className="employer-dash">
+        <div className="hero-dash">
             {/* Hero: the photograph runs the full width of the workspace and the
                 headline statistics sit over its lower edge, so a dark gradient
                 fades it into the page background rather than ending abruptly. */}
-            <section className="employer-hero" style={{
+            <section className="dash-hero" style={{
                 backgroundImage:
                     `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
                      linear-gradient(to bottom, rgba(8,15,31,0.15) 0%, rgba(8,15,31,0) 40%, rgba(8,15,31,0.55) 74%, #080F1F 100%),
@@ -77,15 +77,9 @@ const EmployerDashboard = () => {
                 <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
                     <div style={{ minWidth: 0, flex: '1 1 320px' }}>
                         <div className="d-flex align-items-center gap-3 mb-2">
-                            <div className="d-flex align-items-center justify-content-center flex-shrink-0"
-                                 style={{
-                                     width: 52, height: 52, borderRadius: 14,
-                                     background: 'rgba(255,255,255,0.10)',
-                                     border: '1px solid rgba(255,255,255,0.22)',
-                                     color: '#fff'
-                                 }}>
+                            <div className="hero-badge">
                                 {org?.logo
-                                    ? <img src={getImageUrl(org.logo)} alt="" style={{ width: '100%', height: '100%', borderRadius: 14, objectFit: 'cover' }} />
+                                    ? <img src={getImageUrl(org.logo)} alt="" />
                                     : <FaBuilding size={21} />}
                             </div>
                             <div style={{ minWidth: 0 }}>
