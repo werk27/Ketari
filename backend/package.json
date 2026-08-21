@@ -13,6 +13,7 @@
     "db:pull": "node scripts/dbSync.js pull",
     "test:login": "node scripts/loginSelfTest.js",
     "test:employer-verification": "node scripts/employerVerificationSelfTest.js",
+    "test:candidate-privacy": "node scripts/candidatePrivacySelfTest.js",
     "test:hiring": "node scripts/hiringFlowSelfTest.js"
   },
   "dependencies": {

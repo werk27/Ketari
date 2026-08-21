@@ -1,7 +1,10 @@
 const User = require('../models/User');
+const { maskCandidates } = require('../services/candidatePrivacy');
 
 // Fields safe to expose to authorised HR users when browsing the talent pool.
 // Deliberately excludes saved jobs, reset tokens and other private account data.
+// email and profile.phone are fetched but removed again for candidates who have
+// not applied to this organization - see services/candidatePrivacy.
 const CANDIDATE_FIELDS = [
     'name', 'email', 'createdAt',
     'profile.title', 'profile.bio', 'profile.location', 'profile.phone',
@@ -51,7 +54,7 @@ exports.getCandidates = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            candidates,
+            candidates: await maskCandidates(candidates, req),
             totalPages: Math.ceil(count / limit),
             currentPage: parseInt(page),
             totalCandidates: count

@@ -132,7 +132,11 @@ const AIMatching = () => {
                                             {match.candidate.name}
                                         </div>
                                         <div className="text-muted text-truncate" style={{ fontSize: '0.78rem' }}>
-                                            {match.candidate.email}
+                                            {match.candidate.contactVisible === false
+                                                ? <span className="fst-italic">
+                                                    Contact details become available once they apply
+                                                  </span>
+                                                : match.candidate.email}
                                         </div>
                                     </div>
                                 </div>

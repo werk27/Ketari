@@ -3,6 +3,7 @@ const Application = require('../models/Application');
 const User = require('../models/User');
 const { validationResult } = require('express-validator');
 const { matchCandidates } = require('../services/matchingService');
+const { applicantIdsFor, maskCandidate } = require('../services/candidatePrivacy');
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
 
@@ -421,12 +422,22 @@ exports.getMatchingCandidates = async (req, res) => {
             .filter(match => match.matchScore >= minimumScore)
             .slice(0, limit);
 
+        // A match is a suggestion about someone who has not applied, so their
+        // contact details stay hidden until they do.
+        const revealIds = req.user?.role === 'admin'
+            ? new Set()
+            : await applicantIdsFor(req.employerId || req.user?.employer);
+        const masked = results.map(match => ({
+            ...match,
+            candidate: maskCandidate(match.candidate, revealIds, { isAdmin: req.user?.role === 'admin' })
+        }));
+
         res.status(200).json({
             success: true,
-            count: results.length,
+            count: masked.length,
             // AI assists the recruiter; it never makes the final hiring decision.
             disclaimer: 'AI recommendations are advisory. Final hiring decisions are made by authorised HR users.',
-            candidates: results
+            candidates: masked
         });
     } catch (error) {
         console.error(error);
