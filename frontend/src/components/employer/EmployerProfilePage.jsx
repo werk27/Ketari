@@ -139,7 +139,7 @@ const EmployerProfilePage = () => {
             <div className="d-flex align-items-center gap-3 mb-4 p-3 rounded muted-panel"
                  style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                 <div className="d-flex align-items-center justify-content-center flex-shrink-0 overflow-hidden tint-tile"
-                     style={{ width: 84, height: 84, borderRadius: 16, background: '#EEF2FF', color: '#4F46E5' }}>
+                     style={{ width: 84, height: 84, borderRadius: 16, background: '#E6F4EF', color: '#0F6B4F' }}>
                     {logo
                         ? <img src={getImageUrl(logo)} alt="Organization logo"
                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

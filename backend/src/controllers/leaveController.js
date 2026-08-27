@@ -1,6 +1,7 @@
 const Leave = require('../models/Leave');
 const Employee = require('../models/Employee');
 const Configuration = require('../models/Configuration');
+const notificationService = require('../services/notificationService');
 
 /**
  * Leave management.
@@ -13,6 +14,118 @@ const Configuration = require('../models/Configuration');
  */
 
 const PENDING_STATUSES = ['pending', 'under_review'];
+
+// Annual Leave entitlement scales with tenure: 21 days in the first year,
+// +1 day per completed year of service, capped at 30 days.
+const ANNUAL_LEAVE_BASE_DAYS = 21;
+const ANNUAL_LEAVE_MAX_DAYS = 30;
+
+/**
+ * Whole years of service completed by the employee as of today, using an
+ * exact calendar comparison (not an average day-length division, which
+ * drifts by a day right around each anniversary).
+ */
+const yearsOfService = (hireDate) => {
+    if (!hireDate) return 0;
+    const hire = new Date(hireDate);
+    const now = new Date();
+    let years = now.getFullYear() - hire.getFullYear();
+    const anniversaryPassedThisYear =
+        now.getMonth() > hire.getMonth()
+        || (now.getMonth() === hire.getMonth() && now.getDate() >= hire.getDate());
+    if (!anniversaryPassedThisYear) years -= 1;
+    return Math.max(years, 0);
+};
+
+/** Tenure-based Annual Leave entitlement: 21 -> 22 -> ... -> capped at 30. */
+const calculateAnnualLeaveEntitlement = (hireDate) => {
+    return Math.min(ANNUAL_LEAVE_BASE_DAYS + yearsOfService(hireDate), ANNUAL_LEAVE_MAX_DAYS);
+};
+
+// Sick Leave pay tiers (Labour Proclamation 1156/2019 Art. 83-84), expressed
+// as cumulative day counts within the 12-month entitlement: the first 30
+// days are full pay, the next 60 (days 31-90) are half pay, and the
+// remaining 90 (days 91-180) are unpaid but job-protected.
+const SICK_LEAVE_PAY_TIERS = [
+    { cumulativeUpTo: 30, pay: 'fullPayDays' },
+    { cumulativeUpTo: 90, pay: 'halfPayDays' },
+    { cumulativeUpTo: 180, pay: 'unpaidDays' }
+];
+
+/**
+ * Split a Sick Leave request's days across the statutory pay tiers, given
+ * how many Sick Leave days the employee already used this year *before*
+ * this request. A request that itself spans more than one tier (e.g. it
+ * starts within the full-pay allowance and runs into the half-pay one) is
+ * divided accordingly rather than assigned a single pay rate.
+ */
+const splitSickLeavePayTiers = (usedBeforeThisRequest, requestedDays) => {
+    const breakdown = { fullPayDays: 0, halfPayDays: 0, unpaidDays: 0 };
+    let cursor = Math.max(usedBeforeThisRequest, 0);
+    let remaining = requestedDays;
+
+    for (const tier of SICK_LEAVE_PAY_TIERS) {
+        if (remaining <= 0) break;
+        const capacityLeftInTier = Math.max(tier.cumulativeUpTo - cursor, 0);
+        if (capacityLeftInTier <= 0) continue;
+
+        const daysInThisTier = Math.min(capacityLeftInTier, remaining);
+        breakdown[tier.pay] += daysInThisTier;
+        cursor += daysInThisTier;
+        remaining -= daysInThisTier;
+    }
+
+    // Any days beyond the 180-day cap have no defined tier; they should
+    // already have been rejected by the balance check before reaching here.
+    return breakdown;
+};
+
+/**
+ * Compute the signed-in employee's balance for every configured leave type:
+ * entitlement (tenure-based for Annual Leave, policy-configured otherwise),
+ * days used so far this calendar year, and days remaining.
+ * Shared by the balance endpoint and by leave-request validation, so both
+ * always agree on how much leave someone has left.
+ */
+const getEmployeeLeaveBalances = async (employee) => {
+    // Allowances are policy data, never hard-coded values.
+    const config = await Configuration.findOne({ employer: employee.employer })
+        || await Configuration.findOne({ employer: null })
+        || await Configuration.findOne();
+    const leaveTypes = (config && config.leaveTypes) ? config.leaveTypes : [];
+
+    const yearStart = new Date(new Date().getFullYear(), 0, 1);
+    // Counts approved days plus anything still pending/under review, so an
+    // employee can't get around their balance by stacking several requests
+    // before any of them is decided. Rejected/cancelled requests don't count.
+    const committed = await Leave.find({
+        employee: employee._id,
+        status: { $in: [...PENDING_STATUSES, 'approved'] },
+        startDate: { $gte: yearStart }
+    });
+
+    return leaveTypes
+        .filter(type => type.status !== 'inactive')
+        .map(type => {
+            const used = committed
+                .filter(l => l.leaveTypeName === type.name)
+                .reduce((sum, l) => sum + (l.totalDays || 0), 0);
+            // Annual Leave entitlement scales with tenure rather than using
+            // the flat configured value; every other leave type still comes
+            // straight from policy configuration.
+            const isAnnualLeave = /annual/i.test(type.name || '');
+            const entitlement = isAnnualLeave
+                ? calculateAnnualLeaveEntitlement(employee.employmentInfo && employee.employmentInfo.hireDate)
+                : (type.daysPerYear || 0);
+            return {
+                leaveType: type.name,
+                entitlement,
+                used,
+                remaining: Math.max(entitlement - used, 0),
+                paid: type.paid !== false
+            };
+        });
+};
 
 /** Resolve (or create) the employee record backing the signed-in user. */
 const resolveEmployeeForUser = async (user) => {
@@ -87,6 +200,25 @@ exports.createLeave = async (req, res) => {
             (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)
         ) + 1;
 
+        // Reject requests that would exceed the employee's remaining balance
+        // for this leave type. Types with no configured policy (e.g. a
+        // custom, free-typed leave type) have no balance to check against,
+        // so they are left for HR to judge during review.
+        const balances = await getEmployeeLeaveBalances(employee);
+        const balance = balances.find(b => b.leaveType === leaveType);
+        if (balance && days > balance.remaining) {
+            return res.status(400).json({
+                success: false,
+                message: `Insufficient ${leaveType} balance: ${balance.remaining} day(s) remaining, but ${days} day(s) were requested.`
+            });
+        }
+
+        // Sick Leave pay is legally tiered (full pay -> half pay -> unpaid),
+        // based on how much Sick Leave was already used this year.
+        const payBreakdown = /sick/i.test(leaveType)
+            ? splitSickLeavePayTiers(balance ? balance.used : 0, days)
+            : undefined;
+
         const leave = await Leave.create({
             employee: employee._id,
             employer: employee.employer,
@@ -95,7 +227,17 @@ exports.createLeave = async (req, res) => {
             endDate,
             totalDays: days,
             reason,
+            payBreakdown,
             status: 'pending'
+        });
+
+        await notificationService.notifyRoles({
+            employer: employee.employer,
+            roles: ['hr_expert'],
+            type: 'leave_request',
+            title: 'New leave request',
+            message: `${req.user.name} requested ${leaveType} leave (${days} day${days === 1 ? '' : 's'}).`,
+            link: '/hr-expert/leave'
         });
 
         res.status(201).json({ success: true, data: leave });
@@ -166,6 +308,15 @@ exports.processLeave = async (req, res) => {
         if (req.body.note) leave.processingNote = req.body.note;
         await leave.save();
 
+        await notificationService.notifyRoles({
+            employer: leave.employer,
+            roles: ['hr_manager'],
+            type: 'leave_request',
+            title: 'Leave request awaiting approval',
+            message: `A ${leave.leaveTypeName} leave request from ${leave.employee?.personalInfo?.firstName || 'an employee'} needs your approval.`,
+            link: '/hr-manager/leave'
+        });
+
         res.status(200).json({
             success: true,
             message: 'Leave request forwarded for HR Manager approval',
@@ -227,6 +378,19 @@ exports.updateLeaveStatus = async (req, res) => {
         if (status === 'rejected') leave.rejectionReason = rejectionReason;
         await leave.save();
 
+        if (requesterUserId) {
+            await notificationService.notify({
+                user: requesterUserId,
+                employer: leave.employer,
+                type: 'leave_decision',
+                title: status === 'approved' ? 'Leave request approved' : 'Leave request rejected',
+                message: status === 'approved'
+                    ? `Your ${leave.leaveTypeName} leave request has been approved.`
+                    : `Your ${leave.leaveTypeName} leave request was rejected.${rejectionReason ? ` Reason: ${rejectionReason}` : ''}`,
+                link: '/employee/dashboard'
+            });
+        }
+
         res.status(200).json({ success: true, data: leave });
     } catch (error) {
         console.error('Update Leave Status Error:', error);
@@ -276,34 +440,7 @@ exports.getLeaveBalance = async (req, res) => {
             return res.status(200).json({ success: true, balances: [] });
         }
 
-        // Allowances are policy data, never hard-coded values.
-        const config = await Configuration.findOne({ employer: employee.employer })
-            || await Configuration.findOne({ employer: null })
-            || await Configuration.findOne();
-        const leaveTypes = (config && config.leaveTypes) ? config.leaveTypes : [];
-
-        const yearStart = new Date(new Date().getFullYear(), 0, 1);
-        const approved = await Leave.find({
-            employee: employee._id,
-            status: 'approved',
-            startDate: { $gte: yearStart }
-        });
-
-        const balances = leaveTypes
-            .filter(type => type.status !== 'inactive')
-            .map(type => {
-                const used = approved
-                    .filter(l => l.leaveTypeName === type.name)
-                    .reduce((sum, l) => sum + (l.totalDays || 0), 0);
-                const entitlement = type.daysPerYear || 0;
-                return {
-                    leaveType: type.name,
-                    entitlement,
-                    used,
-                    remaining: Math.max(entitlement - used, 0),
-                    paid: type.paid !== false
-                };
-            });
+        const balances = await getEmployeeLeaveBalances(employee);
 
         res.status(200).json({ success: true, balances });
     } catch (error) {

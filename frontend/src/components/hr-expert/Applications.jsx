@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Spinner, Alert, Button, Modal, Form, Image } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Container, Card, Table, Badge, Spinner, Alert, Button, Modal, Form, Image, Row, Col, InputGroup } from 'react-bootstrap';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-    FaArrowLeft, FaCheck, FaTimes, FaCalendar, FaEnvelope, 
-    FaUser, FaBriefcase, FaGraduationCap, FaStar, FaCertificate, 
-    FaLanguage, FaPhone, FaMapMarkerAlt, FaInfoCircle 
+import {
+    FaArrowLeft, FaCheck, FaTimes, FaCalendar,
+    FaUser, FaFileAlt, FaSearch, FaSlidersH, FaSortUp, FaSortDown, FaSort, FaUndo
 } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import api, { getImageUrl, describeApiError } from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
 import { StatusBadge } from '../workspace/ui';
+import CandidateProfileModal from '../workspace/CandidateProfileModal';
 
 /**
  * The HR Expert's processing pipeline, mirroring the backend's allowed
@@ -34,6 +34,34 @@ const STAGE_LABELS = {
 
 // Once the HR Manager owns the record, the HR Expert can no longer change it.
 const CLOSED_STATUSES = ['selected', 'offered', 'hired', 'rejected', 'withdrawn'];
+
+/** Status options for the report filter, in pipeline order. */
+const STATUS_FILTERS = [
+    'applied', 'under_review', 'ai_analyzed', 'shortlisted',
+    'interview_scheduled', 'interviewed', 'selected', 'offered',
+    'hired', 'rejected', 'withdrawn'
+];
+
+/** Columns the report can be ordered by, mapped to the API's sort keys. */
+const SORTABLE = {
+    name: 'Candidate',
+    createdAt: 'Applied',
+    matchScore: 'Match',
+    experience: 'Experience',
+    status: 'Status'
+};
+
+const EMPTY_FILTERS = {
+    search: '',
+    status: '',
+    minScore: '',
+    education: '',
+    minExperience: '',
+    skills: '',
+    dateFrom: '',
+    dateTo: '',
+    shortlisted: false
+};
 
 /**
  * Merge a processing response into a row without losing populated data.
@@ -72,32 +100,103 @@ const Applications = () => {
     const [showInterviewModal, setShowInterviewModal] = useState(false);
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [selectedApp, setSelectedApp] = useState(null);
-    const [selectedCandidate, setSelectedCandidate] = useState(null);
+    const [profileApp, setProfileApp] = useState(null);
+    const [resumeLoadingId, setResumeLoadingId] = useState(null);
     const [interviewData, setInterviewData] = useState({
         interviewDate: '',
         interviewLocation: '',
         note: ''
     });
 
-    useEffect(() => {
-        fetchApplications();
-    }, [jobId]);
+    // ---- Report state: search, filters, sorting and paging ------------------
+    // Every one of these is sent to the API, so the table always reflects the
+    // real matching records rather than a slice filtered in the browser.
+    const [filters, setFilters] = useState(EMPTY_FILTERS);
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [showFilters, setShowFilters] = useState(false);
+    const [sort, setSort] = useState('matchScore');
+    const [order, setOrder] = useState('desc');
+    const [page, setPage] = useState(1);
+    const [meta, setMeta] = useState({ total: 0, totalPages: 1, statusCounts: {} });
 
-    const fetchApplications = async () => {
+    // Typing in the search box must not fire a request per keystroke.
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedSearch(filters.search), 350);
+        return () => clearTimeout(timer);
+    }, [filters.search]);
+
+    const activeFilterCount = useMemo(() => (
+        Object.entries(filters).filter(([key, value]) => (
+            key !== 'search' && (typeof value === 'boolean' ? value : value !== '')
+        )).length
+    ), [filters]);
+
+    const queryParams = useMemo(() => {
+        const params = { page, limit: 25, sort, order };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (filters.status) params.status = filters.status;
+        if (filters.minScore !== '') params.minScore = filters.minScore;
+        if (filters.education) params.education = filters.education;
+        if (filters.minExperience !== '') params.minExperience = filters.minExperience;
+        if (filters.skills) params.skills = filters.skills;
+        if (filters.dateFrom) params.dateFrom = filters.dateFrom;
+        if (filters.dateTo) params.dateTo = filters.dateTo;
+        if (filters.shortlisted) params.shortlisted = 'true';
+        return params;
+    }, [page, sort, order, debouncedSearch, filters]);
+
+    // Changing what is being asked for always returns to the first page,
+    // otherwise a narrower filter can land the user on a page that no longer exists.
+    useEffect(() => { setPage(1); }, [debouncedSearch, filters.status, filters.minScore,
+        filters.education, filters.minExperience, filters.skills,
+        filters.dateFrom, filters.dateTo, filters.shortlisted, sort, order]);
+
+    const isFirstLoad = useRef(true);
+
+    const fetchApplications = useCallback(async () => {
+        setLoading(true);
         try {
-            const [appRes, jobRes] = await Promise.all([
-                api.get(`/applications/job/${jobId}`),
-                api.get(`/jobs/${jobId}`)
-            ]);
+            const requests = [api.get(`/applications/job/${jobId}`, { params: queryParams })];
+            if (isFirstLoad.current) requests.push(api.get(`/jobs/${jobId}`));
+
+            const [appRes, jobRes] = await Promise.all(requests);
             setApplications(appRes.data.applications || []);
-            setJob(jobRes.data.job);
-        } catch (error) {
-            console.error('Error fetching applications:', error);
-            setError('Failed to load applications');
+            setMeta({
+                total: appRes.data.total ?? 0,
+                totalPages: appRes.data.totalPages ?? 1,
+                statusCounts: appRes.data.statusCounts || {}
+            });
+            if (jobRes) setJob(jobRes.data.job);
+            isFirstLoad.current = false;
+            setError('');
+        } catch (err) {
+            console.error('Error fetching applications:', err);
+            setError(describeApiError(err, 'Failed to load applications'));
         } finally {
             setLoading(false);
         }
+    }, [jobId, queryParams]);
+
+    useEffect(() => { fetchApplications(); }, [fetchApplications]);
+
+    const toggleSort = (field) => {
+        if (sort === field) {
+            setOrder(order === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSort(field);
+            setOrder(field === 'name' ? 'asc' : 'desc');
+        }
     };
+
+    const sortIcon = (field) => {
+        if (sort !== field) return <FaSort size={10} className="text-muted ms-1" />;
+        return order === 'asc'
+            ? <FaSortUp size={10} className="ms-1" />
+            : <FaSortDown size={10} className="ms-1" />;
+    };
+
+    const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
+    const resetFilters = () => setFilters(EMPTY_FILTERS);
 
     const handleStatusUpdate = async (applicationId, status) => {
         try {
@@ -106,6 +205,9 @@ const Applications = () => {
                 app._id === applicationId ? mergeProcessed(app, res.data.application, { status }) : app
             ));
             toast.success(`Application moved to ${STAGE_LABELS[status] || status}`);
+            // Re-read so the pipeline tallies and any active status filter stay
+            // truthful - the row may no longer belong in the current view.
+            fetchApplications();
         } catch (error) {
             toast.error(describeApiError(error, 'Failed to update status'));
         }
@@ -130,14 +232,31 @@ const Applications = () => {
             setShowInterviewModal(false);
             setSelectedApp(null);
             setInterviewData({ interviewDate: '', interviewLocation: '', note: '' });
+            fetchApplications();
         } catch (error) {
             toast.error(describeApiError(error, 'Failed to schedule interview'));
         }
     };
 
     const handleViewProfile = (application) => {
-        setSelectedCandidate(application.applicant);
+        setProfileApp(application);
         setShowProfileModal(true);
+    };
+
+    const handleViewResume = async (application) => {
+        if (!application.resume?._id) return;
+        setResumeLoadingId(application._id);
+        try {
+            const res = await api.get(`/resumes/${application.resume._id}/file`, { responseType: 'blob' });
+            const fileUrl = URL.createObjectURL(
+                new Blob([res.data], { type: res.headers['content-type'] || 'application/pdf' })
+            );
+            window.open(fileUrl, '_blank', 'noopener,noreferrer');
+        } catch (err) {
+            toast.error(describeApiError(err, 'Could not open this CV'));
+        } finally {
+            setResumeLoadingId(null);
+        }
     };
 
     const getMatchScoreClass = (score) => {
@@ -146,18 +265,7 @@ const Applications = () => {
         return 'match-low';
     };
 
-    const formatDate = (date) => {
-        if (!date) return 'Not scheduled';
-        return new Date(date).toLocaleString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
-
-    if (loading) {
+    if (loading && isFirstLoad.current) {
         return (
             <Container className="py-5 text-center">
                 <Spinner animation="border" variant="primary" />
@@ -181,42 +289,154 @@ const Applications = () => {
         <section className="applications-section py-4">
             <Container>
                 <BackButton to={`${basePath}/vacancies`} />
-                <div className="d-flex justify-content-between align-items-center mb-4">
+                <div className="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
                     <div>
-                        <Button 
-                            variant="link" 
+                        <Button
+                            variant="link"
                             className="text-decoration-none p-0 mb-2 d-inline-flex align-items-center gap-2"
                             onClick={() => navigate(`${basePath}/vacancies`)}
                         >
                             <FaArrowLeft /> Back to Jobs
                         </Button>
                         <h2 className="fw-bold mb-0">Applications for {job?.title}</h2>
-                        <p className="text-muted">{job?.department} • {job?.location}</p>
+                        <p className="text-muted mb-0">{job?.department} &middot; {job?.location}</p>
                     </div>
                     <Badge bg="primary" className="fs-6 p-2">
-                        {applications.length} Applicants
+                        {meta.total} Applicant{meta.total === 1 ? '' : 's'}
                     </Badge>
                 </div>
+
+                {/* ---- Report controls -------------------------------------
+                    Search, filter and sort are all resolved by the API against
+                    the real application records, so what is counted above and
+                    listed below always agree. */}
+                <Card className="shadow-sm mb-3">
+                    <Card.Body className="p-3">
+                        <Row className="g-2 align-items-center">
+                            <Col md={5}>
+                                <InputGroup size="sm">
+                                    <InputGroup.Text><FaSearch size={12} /></InputGroup.Text>
+                                    <Form.Control
+                                        placeholder="Search candidates by name, email or skill"
+                                        value={filters.search}
+                                        onChange={(e) => setFilter('search', e.target.value)}
+                                    />
+                                </InputGroup>
+                            </Col>
+                            <Col md={3}>
+                                <Form.Select size="sm" value={filters.status}
+                                             onChange={(e) => setFilter('status', e.target.value)}>
+                                    <option value="">All statuses</option>
+                                    {STATUS_FILTERS.map(status => (
+                                        <option key={status} value={status}>
+                                            {STAGE_LABELS[status]}
+                                            {meta.statusCounts[status] ? ` (${meta.statusCounts[status]})` : ''}
+                                        </option>
+                                    ))}
+                                </Form.Select>
+                            </Col>
+                            <Col md={4} className="d-flex gap-2 justify-content-md-end">
+                                <Form.Check
+                                    type="switch"
+                                    id="shortlisted-only"
+                                    className="align-self-center text-nowrap"
+                                    label="Shortlisted only"
+                                    checked={filters.shortlisted}
+                                    onChange={(e) => setFilter('shortlisted', e.target.checked)}
+                                />
+                                <Button size="sm" variant={showFilters ? 'primary' : 'outline-secondary'}
+                                        onClick={() => setShowFilters(!showFilters)}>
+                                    <FaSlidersH className="me-1" /> Filters
+                                    {activeFilterCount > 0 && (
+                                        <Badge bg="light" text="dark" className="ms-1">{activeFilterCount}</Badge>
+                                    )}
+                                </Button>
+                            </Col>
+                        </Row>
+
+                        {showFilters && (
+                            <Row className="g-2 mt-1 pt-3" style={{ borderTop: '1px solid #E2E8F0' }}>
+                                <Col md={2}>
+                                    <Form.Label className="small text-muted mb-1">Min AI score</Form.Label>
+                                    <Form.Control size="sm" type="number" min="0" max="100" placeholder="0"
+                                                  value={filters.minScore}
+                                                  onChange={(e) => setFilter('minScore', e.target.value)} />
+                                </Col>
+                                <Col md={2}>
+                                    <Form.Label className="small text-muted mb-1">Min experience (yrs)</Form.Label>
+                                    <Form.Control size="sm" type="number" min="0" step="0.5" placeholder="0"
+                                                  value={filters.minExperience}
+                                                  onChange={(e) => setFilter('minExperience', e.target.value)} />
+                                </Col>
+                                <Col md={3}>
+                                    <Form.Label className="small text-muted mb-1">Education</Form.Label>
+                                    <Form.Control size="sm" placeholder="e.g. Computer Science"
+                                                  value={filters.education}
+                                                  onChange={(e) => setFilter('education', e.target.value)} />
+                                </Col>
+                                <Col md={3}>
+                                    <Form.Label className="small text-muted mb-1">Skills (comma separated)</Form.Label>
+                                    <Form.Control size="sm" placeholder="e.g. React, Node.js"
+                                                  value={filters.skills}
+                                                  onChange={(e) => setFilter('skills', e.target.value)} />
+                                </Col>
+                                <Col md={2} className="d-flex align-items-end">
+                                    <Button size="sm" variant="outline-secondary" className="w-100"
+                                            onClick={resetFilters} disabled={activeFilterCount === 0}>
+                                        <FaUndo className="me-1" /> Reset
+                                    </Button>
+                                </Col>
+                                <Col md={3}>
+                                    <Form.Label className="small text-muted mb-1">Applied from</Form.Label>
+                                    <Form.Control size="sm" type="date" value={filters.dateFrom}
+                                                  onChange={(e) => setFilter('dateFrom', e.target.value)} />
+                                </Col>
+                                <Col md={3}>
+                                    <Form.Label className="small text-muted mb-1">Applied to</Form.Label>
+                                    <Form.Control size="sm" type="date" value={filters.dateTo}
+                                                  onChange={(e) => setFilter('dateTo', e.target.value)} />
+                                </Col>
+                            </Row>
+                        )}
+                    </Card.Body>
+                </Card>
 
                 {applications.length === 0 ? (
                     <Card className="text-center py-5">
                         <Card.Body>
-                            <div className="mb-3" style={{ fontSize: '4rem' }}>📭</div>
-                            <h4>No applications yet</h4>
-                            <p className="text-muted">There are no applications for this job yet</p>
+                            <div className="mb-3 text-muted"><FaUser size={42} /></div>
+                            <h4>No applicants match this view</h4>
+                            <p className="text-muted mb-3">
+                                {meta.total === 0 && activeFilterCount === 0 && !debouncedSearch
+                                    ? 'There are no applications for this vacancy yet.'
+                                    : 'No application matches the current search and filters.'}
+                            </p>
+                            {(activeFilterCount > 0 || debouncedSearch) && (
+                                <Button size="sm" variant="outline-primary"
+                                        onClick={() => { resetFilters(); setFilter('search', ''); }}>
+                                    Clear search and filters
+                                </Button>
+                            )}
                         </Card.Body>
                     </Card>
                 ) : (
                     <Card className="shadow-sm">
                         <Card.Body className="p-0">
                             <div className="table-responsive">
-                                <Table hover className="mb-0">
+                                <Table hover className="mb-0 align-middle">
                                     <thead className="bg-light">
                                         <tr>
-                                            <th>Candidate</th>
-                                            <th>Applied Date</th>
-                                            <th>Match Score</th>
-                                            <th>Status</th>
+                                            {Object.entries(SORTABLE).map(([field, label]) => (
+                                                <th key={field}
+                                                    role="button"
+                                                    onClick={() => toggleSort(field)}
+                                                    className="user-select-none"
+                                                    title={`Sort by ${label.toLowerCase()}`}>
+                                                    {label}{sortIcon(field)}
+                                                </th>
+                                            ))}
+                                            <th>Education</th>
+                                            <th>Relevant skills</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
@@ -264,18 +484,51 @@ const Applications = () => {
                                                         </div>
                                                     </div>
                                                 </td>
-                                                <td>{new Date(app.createdAt).toLocaleDateString()}</td>
+                                                <td className="text-nowrap">{new Date(app.createdAt).toLocaleDateString()}</td>
                                                 <td>
-                                                    {app.matchScore ? (
+                                                    {typeof app.matchScore === 'number' ? (
                                                         <span className={`match-score ${getMatchScoreClass(app.matchScore)}`}>
                                                             {app.matchScore}%
                                                         </span>
                                                     ) : (
-                                                        <span className="text-muted">—</span>
+                                                        <span className="text-muted">&mdash;</span>
                                                     )}
+                                                </td>
+                                                <td className="text-nowrap">
+                                                    {app.insights?.experienceYears
+                                                        ? `${app.insights.experienceYears} yr${app.insights.experienceYears === 1 ? '' : 's'}`
+                                                        : <span className="text-muted">&mdash;</span>}
                                                 </td>
                                                 <td>
                                                     <StatusBadge status={app.status} />
+                                                </td>
+                                                <td style={{ maxWidth: 190 }}>
+                                                    <div className="small">{app.insights?.educationSummary || <span className="text-muted">&mdash;</span>}</div>
+                                                    {typeof app.matchDetails?.educationScore === 'number' && (
+                                                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                                            {app.matchDetails.educationScore}% education match
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td style={{ maxWidth: 220 }}>
+                                                    <div className="d-flex flex-wrap gap-1">
+                                                        {(app.matchDetails?.matchingSkills || []).slice(0, 3).map((skill, i) => (
+                                                            <Badge key={i} bg="success" className="fw-normal">{skill}</Badge>
+                                                        ))}
+                                                        {(app.matchDetails?.matchingSkills || []).length > 3 && (
+                                                            <Badge bg="light" text="dark" className="fw-normal">
+                                                                +{app.matchDetails.matchingSkills.length - 3}
+                                                            </Badge>
+                                                        )}
+                                                        {(app.matchDetails?.matchingSkills || []).length === 0 && (
+                                                            <span className="text-muted small">&mdash;</span>
+                                                        )}
+                                                    </div>
+                                                    {(app.matchDetails?.missingSkills || []).length > 0 && (
+                                                        <div className="text-danger" style={{ fontSize: '0.72rem' }}>
+                                                            {app.matchDetails.missingSkills.length} missing
+                                                        </div>
+                                                    )}
                                                 </td>
                                                 <td>
                                                     <div className="d-flex gap-1 flex-wrap">
@@ -287,6 +540,19 @@ const Applications = () => {
                                                         >
                                                             <FaUser />
                                                         </Button>
+                                                        {app.resume?._id && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline-secondary"
+                                                                onClick={() => handleViewResume(app)}
+                                                                disabled={resumeLoadingId === app._id}
+                                                                title="View CV"
+                                                            >
+                                                                {resumeLoadingId === app._id
+                                                                    ? <Spinner animation="border" size="sm" />
+                                                                    : <FaFileAlt />}
+                                                            </Button>
+                                                        )}
                                                         {canProcess && app.status === 'applied' && (
                                                             <>
                                                                 <Button
@@ -382,6 +648,30 @@ const Applications = () => {
                                 </Table>
                             </div>
                         </Card.Body>
+
+                        {/* Paging footer - "showing X of Y" is what makes a long
+                            applicant list reviewable without scrolling forever. */}
+                        <Card.Footer className="d-flex justify-content-between align-items-center flex-wrap gap-2 bg-white">
+                            <span className="text-muted small">
+                                Showing {applications.length} of {meta.total} applicant{meta.total === 1 ? '' : 's'}
+                                {meta.totalPages > 1 ? ` · page ${page} of ${meta.totalPages}` : ''}
+                                {loading ? ' · updating…' : ''}
+                            </span>
+                            {meta.totalPages > 1 && (
+                                <div className="d-flex gap-2">
+                                    <Button size="sm" variant="outline-secondary"
+                                            disabled={page <= 1 || loading}
+                                            onClick={() => setPage(p => Math.max(p - 1, 1))}>
+                                        Previous
+                                    </Button>
+                                    <Button size="sm" variant="outline-secondary"
+                                            disabled={page >= meta.totalPages || loading}
+                                            onClick={() => setPage(p => Math.min(p + 1, meta.totalPages))}>
+                                        Next
+                                    </Button>
+                                </div>
+                            )}
+                        </Card.Footer>
                     </Card>
                 )}
 
@@ -432,270 +722,12 @@ const Applications = () => {
                     </Modal.Body>
                 </Modal>
 
-                {/* Candidate Profile Modal */}
-                <Modal show={showProfileModal} onHide={() => setShowProfileModal(false)} size="lg">
-                    <Modal.Header closeButton>
-                        <Modal.Title>
-                            <FaUser className="me-2" /> Candidate Profile
-                        </Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        {selectedCandidate && (
-                            <div>
-                                {/* Header with Photo */}
-                                <div className="text-center mb-4">
-                                    {selectedCandidate.profile?.profilePhoto ? (
-                                        <Image 
-                                            src={getImageUrl(selectedCandidate.profile.profilePhoto)} 
-                                            roundedCircle 
-                                            style={{ 
-                                                width: '120px', 
-                                                height: '120px', 
-                                                objectFit: 'cover',
-                                                border: '4px solid #2c3e8f'
-                                            }} 
-                                        />
-                                    ) : (
-                                        <div 
-                                            style={{ 
-                                                width: '120px', 
-                                                height: '120px', 
-                                                borderRadius: '50%',
-                                                background: 'linear-gradient(135deg, #2c3e8f, #1a237e)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                color: 'var(--surface)',
-                                                fontSize: '3rem',
-                                                margin: '0 auto',
-                                                border: '4px solid #2c3e8f'
-                                            }}
-                                        >
-                                            {selectedCandidate.name?.charAt(0)?.toUpperCase() || 'U'}
-                                        </div>
-                                    )}
-                                    <Badge bg="primary" className="px-3 py-2">{selectedCandidate.role?.toUpperCase()}</Badge>
-                                </div>
-
-                                {/* Transparent AI Matching Analysis Breakdown */}
-                                {selectedApp?.matchScore !== undefined && (
-                                    <Card className="mb-4 border-0 shadow-sm" style={{ background: 'var(--surface-hover)', borderRadius: '12px' }}>
-                                        <Card.Body className="p-4">
-                                            <div className="d-flex justify-content-between align-items-center mb-3">
-                                                <h6 className="fw-bold mb-0 text-primary">
-                                                    🤖 AI Decision-Support Match Analysis
-                                                </h6>
-                                                <Badge bg="success" className="fs-6 px-3 py-2">
-                                                    Overall Match: {selectedApp.matchScore}%
-                                                </Badge>
-                                            </div>
-
-                                            <Row className="g-3 mb-3">
-                                                <Col md={3} xs={6}>
-                                                    <div className="p-2 border rounded text-center bg-white">
-                                                        <small className="text-muted d-block">Skills Match</small>
-                                                        <strong className="text-primary">{selectedApp.matchDetails?.skillsScore ?? selectedApp.matchScore}%</strong>
-                                                    </div>
-                                                </Col>
-                                                <Col md={3} xs={6}>
-                                                    <div className="p-2 border rounded text-center bg-white">
-                                                        <small className="text-muted d-block">Education Match</small>
-                                                        <strong className="text-info">{selectedApp.matchDetails?.educationScore ?? 100}%</strong>
-                                                    </div>
-                                                </Col>
-                                                <Col md={3} xs={6}>
-                                                    <div className="p-2 border rounded text-center bg-white">
-                                                        <small className="text-muted d-block">Experience Match</small>
-                                                        <strong className="text-warning">{selectedApp.matchDetails?.experienceScore ?? 85}%</strong>
-                                                    </div>
-                                                </Col>
-                                                <Col md={3} xs={6}>
-                                                    <div className="p-2 border rounded text-center bg-white">
-                                                        <small className="text-muted d-block">Location Match</small>
-                                                        <strong className="text-success">{selectedApp.matchDetails?.locationScore ?? 100}%</strong>
-                                                    </div>
-                                                </Col>
-                                            </Row>
-
-                                            {/* Matching vs Missing Skills */}
-                                            {selectedApp.matchDetails?.matchingSkills?.length > 0 && (
-                                                <div className="mb-2">
-                                                    <small className="fw-bold text-success me-2">Matching Skills:</small>
-                                                    {selectedApp.matchDetails.matchingSkills.map((s, i) => (
-                                                        <Badge key={i} bg="success" className="me-1">{s}</Badge>
-                                                    ))}
-                                                </div>
-                                            )}
-                                            {selectedApp.matchDetails?.missingSkills?.length > 0 && (
-                                                <div className="mb-2">
-                                                    <small className="fw-bold text-danger me-2">Missing Skills:</small>
-                                                    {selectedApp.matchDetails.missingSkills.map((s, i) => (
-                                                        <Badge key={i} bg="outline-danger" className="me-1 border text-danger">{s}</Badge>
-                                                    ))}
-                                                </div>
-                                            )}
-
-                                            <small className="text-muted fst-italic d-block mt-2" style={{ fontSize: '0.78rem' }}>
-                                                ℹ️ AI scores are automated decision-support recommendations to assist human HR reviewers.
-                                            </small>
-                                        </Card.Body>
-                                    </Card>
-                                )}
-
-                                <hr />
-
-                                <Row>
-                                    {/* Contact Info */}
-                                    <Col md={6}>
-                                        <h6 className="fw-bold"><FaInfoCircle className="me-2" /> Contact Information</h6>
-                                        <div className="mb-2">
-                                            <small className="text-muted">Phone</small>
-                                            <p className="fw-semibold mb-0">
-                                                {selectedCandidate.profile?.phone || 'Not provided'}
-                                            </p>
-                                        </div>
-                                        <div className="mb-2">
-                                            <small className="text-muted">Location</small>
-                                            <p className="fw-semibold mb-0">
-                                                {selectedCandidate.profile?.location || 'Not provided'}
-                                            </p>
-                                        </div>
-                                        <div className="mb-2">
-                                            <small className="text-muted">Bio</small>
-                                            <p className="mb-0">
-                                                {selectedCandidate.profile?.bio || 'No bio provided'}
-                                            </p>
-                                        </div>
-                                    </Col>
-
-                                    {/* Skills */}
-                                    <Col md={6}>
-                                        <h6 className="fw-bold"><FaStar className="me-2" /> Skills</h6>
-                                        {selectedCandidate.profile?.skills?.length > 0 ? (
-                                            <div className="d-flex flex-wrap gap-1">
-                                                {selectedCandidate.profile.skills.map((skill, idx) => (
-                                                    <Badge key={idx} bg="primary" className="p-2">
-                                                        {skill}
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-muted">No skills listed</p>
-                                        )}
-
-                                        <div className="mt-3">
-                                            <h6 className="fw-bold"><FaCertificate className="me-2" /> Certifications</h6>
-                                            {selectedCandidate.profile?.certifications?.length > 0 ? (
-                                                <div className="d-flex flex-wrap gap-1">
-                                                    {selectedCandidate.profile.certifications.map((cert, idx) => (
-                                                        <Badge key={idx} bg="info" className="p-2">
-                                                            {cert}
-                                                        </Badge>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <p className="text-muted">No certifications listed</p>
-                                            )}
-                                        </div>
-
-                                        <div className="mt-3">
-                                            <h6 className="fw-bold"><FaLanguage className="me-2" /> Languages</h6>
-                                            {selectedCandidate.profile?.languages?.length > 0 ? (
-                                                <div className="d-flex flex-wrap gap-1">
-                                                    {selectedCandidate.profile.languages.map((lang, idx) => (
-                                                        <Badge key={idx} bg="secondary" className="p-2">
-                                                            {lang}
-                                                        </Badge>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <p className="text-muted">No languages listed</p>
-                                            )}
-                                        </div>
-                                    </Col>
-                                </Row>
-
-                                <hr />
-
-                                {/* Education */}
-                                <h6 className="fw-bold"><FaGraduationCap className="me-2" /> Education</h6>
-                                {selectedCandidate.profile?.education?.length > 0 ? (
-                                    selectedCandidate.profile.education.map((edu, idx) => (
-                                        <div key={idx} className="p-2 border-bottom">
-                                            <div className="fw-semibold">{edu.degree}</div>
-                                            <div className="text-muted">{edu.institution}</div>
-                                            <div className="text-muted small">{edu.field} {edu.graduationYear ? `• ${edu.graduationYear}` : ''}</div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <p className="text-muted">No education listed</p>
-                                )}
-
-                                <hr />
-
-                                {/* Work Experience */}
-                                <h6 className="fw-bold"><FaBriefcase className="me-2" /> Work Experience</h6>
-                                {selectedCandidate.profile?.workExperience?.length > 0 ? (
-                                    selectedCandidate.profile.workExperience.map((exp, idx) => (
-                                        <div key={idx} className="p-2 border-bottom">
-                                            <div className="fw-semibold">{exp.position} at {exp.company}</div>
-                                            <div className="text-muted small">
-                                                {exp.startDate ? new Date(exp.startDate).getFullYear() : ''} 
-                                                {exp.endDate === 'Present' ? ' - Present' : exp.endDate ? ` - ${new Date(exp.endDate).getFullYear()}` : ''}
-                                            </div>
-                                            {exp.description && (
-                                                <div className="text-muted small">{exp.description}</div>
-                                            )}
-                                        </div>
-                                    ))
-                                ) : (
-                                    <p className="text-muted">No work experience listed</p>
-                                )}
-
-                                <hr />
-
-                                {/* Match Score Summary */}
-                                <div className="bg-light p-3 rounded">
-                                    <h6 className="fw-bold"><FaStar className="me-2 text-warning" /> AI Match Summary</h6>
-                                    <div className="d-flex align-items-center gap-3">
-                                        <div className="text-center">
-                                            <div className="display-6 fw-bold">{selectedCandidate.matchScore || 'N/A'}</div>
-                                            <small className="text-muted">Overall Match</small>
-                                        </div>
-                                        <div className="flex-grow-1">
-                                            <div className="d-flex justify-content-between small">
-                                                <span>Skills: {selectedCandidate.matchScore || 0}%</span>
-                                                <span>Education: {selectedCandidate.matchScore || 0}%</span>
-                                                <span>Experience: {selectedCandidate.matchScore || 0}%</span>
-                                            </div>
-                                            <div className="progress" style={{ height: '8px' }}>
-                                                <div 
-                                                    className={`progress-bar ${selectedCandidate.matchScore >= 70 ? 'bg-success' : selectedCandidate.matchScore >= 40 ? 'bg-warning' : 'bg-danger'}`}
-                                                    style={{ width: `${selectedCandidate.matchScore || 0}%` }}
-                                                ></div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="secondary" onClick={() => setShowProfileModal(false)}>
-                            Close
-                        </Button>
-                        <Button 
-                            variant="primary-gradient"
-                            onClick={() => {
-                                if (selectedCandidate) {
-                                    window.location.href = `mailto:${selectedCandidate.email}`;
-                                }
-                            }}
-                        >
-                            <FaEnvelope className="me-2" /> Contact Candidate
-                        </Button>
-                    </Modal.Footer>
-                </Modal>
+                {/* Candidate Profile Modal - shared with the HR Manager decision queue */}
+                <CandidateProfileModal
+                    show={showProfileModal}
+                    onHide={() => setShowProfileModal(false)}
+                    application={profileApp}
+                />
             </Container>
         </section>
     );

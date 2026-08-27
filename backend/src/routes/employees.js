@@ -7,9 +7,14 @@ const {
     getMyEmployeeRecord,
     updateEmployee,
     deleteEmployee,
-    getEmployeeStatistics
+    getEmployeeStatistics,
+    getUnlinkedAccounts,
+    createEmployeeAccount,
+    linkEmployeeAccount,
+    setEmployeeAccountStatus,
+    assignEmployeeRole
 } = require('../controllers/employeeController');
-const { protect, can, withEmployerScope } = require('../middleware/auth');
+const { protect, can, withEmployerScope, requireActiveEmployer } = require('../middleware/auth');
 const { CAPABILITIES } = require('../config/permissions');
 const {
     getMyOnboarding,
@@ -64,6 +69,13 @@ router.get('/me', protect, getMyEmployeeRecord);
 // @access  Private (employee:view)
 router.get('/statistics', protect, can(CAPABILITIES.EMPLOYEE_VIEW), withEmployerScope, getEmployeeStatistics);
 
+// @route   GET /api/employees/accounts/unlinked
+// @desc    User accounts in this organization not yet linked to any employee
+//          record (populates "link an existing account"). Declared before
+//          '/:id' so the literal path is never read as an employee id.
+// @access  Private (org:team - the employer)
+router.get('/accounts/unlinked', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, getUnlinkedAccounts);
+
 // @route   POST /api/employees
 // @desc    Record a new employee
 // @access  Private (HR Expert - records information)
@@ -88,5 +100,36 @@ router.put('/:id', protect, can(CAPABILITIES.EMPLOYEE_RECORD), withEmployerScope
 // @desc    Mark an employee as terminated (history is retained)
 // @access  Private (HR Manager)
 router.delete('/:id', protect, can(CAPABILITIES.EMPLOYEE_DELETE), withEmployerScope, deleteEmployee);
+
+// ---------------------------------------------------------------------------
+// Employee <-> User account <-> Organizational role.
+//
+// Restricted to the employer (org:team, the same capability that already
+// gates /employers/me/team) rather than the HR Expert's employee:record
+// capability - recording someone's personal/employment details is routine
+// HR Expert work, but granting login access or an organizational role is an
+// ownership-level decision, consistent with how team membership already
+// works elsewhere in this app.
+// ---------------------------------------------------------------------------
+
+// @route   POST /api/employees/:id/account
+// @desc    Create a new user account for an existing employee
+// @access  Private (org:team - the employer)
+router.post('/:id/account', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, requireActiveEmployer, createEmployeeAccount);
+
+// @route   PUT /api/employees/:id/account/link
+// @desc    Link an existing, unlinked user account to this employee
+// @access  Private (org:team - the employer)
+router.put('/:id/account/link', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, linkEmployeeAccount);
+
+// @route   PUT /api/employees/:id/account/status
+// @desc    Activate or deactivate the employee's linked account
+// @access  Private (org:team - the employer)
+router.put('/:id/account/status', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, setEmployeeAccountStatus);
+
+// @route   PUT /api/employees/:id/role
+// @desc    Assign an organizational role to the employee's linked account
+// @access  Private (org:team - the employer)
+router.put('/:id/role', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, requireActiveEmployer, assignEmployeeRole);
 
 module.exports = router;

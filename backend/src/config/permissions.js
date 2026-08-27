@@ -93,6 +93,20 @@ const CAPABILITIES = {
     REPORT_HR: 'report:hr',
     REPORT_SYSTEM: 'report:system',
 
+    // ---------- Job Requisition / Manpower Request ----------
+    // The bridge between a department's staffing need and vacancy creation.
+    // Deliberately separate from VACANCY_* so approving a requisition never
+    // implies the ability to approve the vacancy created from it, and vice versa.
+    // Note: REQUISITION_CREATE is granted to the `employer` role only. A
+    // Department Head is NOT a separate role - it is any organization member
+    // assigned as a Department's `manager` (Configuration.departments[].manager),
+    // authorized per-department in requisitionController.createRequisition
+    // rather than through this role-capability table.
+    REQUISITION_CREATE: 'requisition:create',   // raise/edit a requisition (Employer, or a Department Head for their own department)
+    REQUISITION_VIEW: 'requisition:view',
+    REQUISITION_PROCESS: 'requisition:process', // review/return/prepare for approval (HR Expert)
+    REQUISITION_APPROVE: 'requisition:approve', // approve/reject (HR Manager)
+
     // ---------- Organization (employer scope) ----------
     ORG_MANAGE: 'org:manage',
     ORG_TEAM_MANAGE: 'org:team',
@@ -116,6 +130,11 @@ const HR_EXPERT_CAPABILITIES = [
     C.CANDIDATE_VIEW, C.INTERVIEW_SCHEDULE, C.INTERVIEW_EVALUATE, C.AI_MATCH,
     // Employee information
     C.EMPLOYEE_VIEW, C.EMPLOYEE_RECORD,
+    // Job Requisition - reviews and forwards what a Department Head (or the
+    // Employer) originates; never raises its own, so the review step is a
+    // genuine second pair of eyes rather than checking its own request. See
+    // requisitionController.createRequisition for who may originate one.
+    C.REQUISITION_VIEW, C.REQUISITION_PROCESS,
     // HR operations - records and forwards, never approves
     C.LEAVE_VIEW, C.LEAVE_PROCESS, C.LEAVE_REQUEST,
     C.REQUEST_VIEW, C.REQUEST_PROCESS, C.REQUEST_RAISE,
@@ -135,6 +154,10 @@ const HR_MANAGER_CAPABILITIES = [
     C.CANDIDATE_VIEW, C.INTERVIEW_REVIEW, C.AI_MATCH,
     // Employee information (read-only oversight, plus authorised termination)
     C.EMPLOYEE_VIEW, C.EMPLOYEE_DELETE,
+    // Job Requisition - approves/rejects only, never creates or processes.
+    // Deliberately excludes ORG_CONFIG: reviewing staffing requests never
+    // grants the ability to manage the organization's configuration.
+    C.REQUISITION_VIEW, C.REQUISITION_APPROVE,
     // HR approvals
     C.LEAVE_VIEW, C.LEAVE_APPROVE, C.LEAVE_REQUEST,
     C.REQUEST_VIEW, C.REQUEST_APPROVE, C.REQUEST_RAISE,
@@ -158,7 +181,15 @@ const EMPLOYEE_CAPABILITIES = [
     // sight of applications they already made to other organizations and
     // cannot even withdraw them.
     C.JOB_SEEK,
-    C.JOB_SEEK_PROFILE
+    C.JOB_SEEK_PROFILE,
+    // Job Requisition: broad at the role level (any employee may attempt to
+    // raise one), same pattern as VACANCY_EDIT - the REAL restriction is
+    // enforced per-department in requisitionController.createRequisition,
+    // which only allows it when this specific user is the assigned
+    // Department Head (Configuration.departments[].manager) of the
+    // department named on the requisition. An employee with no department
+    // headed will always be rejected there.
+    C.REQUISITION_CREATE, C.REQUISITION_VIEW
 ];
 
 const ROLE_CAPABILITIES = {
@@ -175,10 +206,21 @@ const ROLE_CAPABILITIES = {
 
     // Owns the organization: oversight, team management, org configuration.
     // Sees the whole HR environment but does not do HR Expert day-to-day work.
+    //
+    // EMPLOYEE_RECORD is the one exception: a brand-new organization has no
+    // HR Expert yet, and a role may only ever be granted to the account
+    // already linked to an existing Employee record (never created
+    // independently of one - see employeeController.assignEmployeeRole).
+    // Without it the employer could never record that first Employee to
+    // become its own HR Expert or HR Manager through the correct path.
     employer: [
         C.ORG_MANAGE, C.ORG_TEAM_MANAGE, C.ORG_CONFIG,
         C.VACANCY_VIEW, C.APPLICATION_VIEW, C.CANDIDATE_VIEW,
-        C.EMPLOYEE_VIEW,
+        C.EMPLOYEE_VIEW, C.EMPLOYEE_RECORD,
+        // Raises staffing needs on behalf of a department (the organization's
+        // authorized requester in the absence of a separate department-head
+        // role) but never processes or approves them - that stays with HR.
+        C.REQUISITION_CREATE, C.REQUISITION_VIEW,
         C.LEAVE_VIEW, C.REQUEST_VIEW, C.TRAINING_VIEW,
         C.DELEGATION_VIEW, C.DELEGATION_CREATE,
         C.ATTENDANCE_VIEW, C.COMPLAINT_VIEW, C.DOCUMENT_VIEW,
@@ -209,13 +251,16 @@ const HR_ROLES = ['hr_expert', 'hr_manager'];
 const EMPLOYER_MANAGEABLE_ROLES = ['hr_expert', 'hr_manager', 'employee'];
 
 /**
- * Resolve every capability a user holds: role baseline + employer-granted overrides.
+ * Resolve every capability a user holds: role baseline + employer-granted overrides
+ * + anything temporarily inherited via an active delegation (see auth.js `protect`,
+ * which attaches `delegatedCapabilities` before this runs).
  */
 function capabilitiesFor(user) {
     if (!user || !user.role) return [];
     const base = ROLE_CAPABILITIES[user.role] || [];
     const extra = Array.isArray(user.permissions) ? user.permissions : [];
-    return [...new Set([...base, ...extra])];
+    const delegated = Array.isArray(user.delegatedCapabilities) ? user.delegatedCapabilities : [];
+    return [...new Set([...base, ...extra, ...delegated])];
 }
 
 function userCan(user, capability) {

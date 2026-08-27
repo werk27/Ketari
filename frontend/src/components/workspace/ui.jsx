@@ -3,7 +3,10 @@ import { Link } from 'react-router-dom';
 
 /** Colour tokens shared by the recruitment workspace. */
 export const TOKENS = {
-    primary: '#4F46E5',
+    // Aligned with the platform's single brand color (index.css
+    // --primary-color) so every workspace (HR Expert/Manager/Employer/Admin)
+    // visually matches the candidate-facing side of the same product.
+    primary: '#0F6B4F',
     border: '#E2E8F0',
     muted: '#64748B'
 };
@@ -19,6 +22,11 @@ const STATUS_STYLES = {
     closed: { label: 'Closed', bg: '#F1F5F9', color: '#475569' },
     rejected: { label: 'Rejected', bg: '#FEE2E2', color: '#991B1B' },
     archived: { label: 'Archived', bg: '#F1F5F9', color: '#475569' },
+
+    // Job Requisition lifecycle
+    submitted: { label: 'Submitted', bg: '#E0E7FF', color: '#3730A3' },
+    returned: { label: 'Returned', bg: '#FEE2E2', color: '#991B1B' },
+    job_created: { label: 'Job Created', bg: '#16A34A', color: '#FFFFFF' },
 
     // Application pipeline
     applied: { label: 'Applied', bg: '#E0E7FF', color: '#3730A3' },

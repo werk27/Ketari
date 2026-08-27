@@ -14,7 +14,7 @@ import { toast } from 'react-toastify';
 
 /* ── Role config map ── */
 const ROLE_CONFIG = {
-    all:            { apiRole: '',            title: 'All Users',       icon: <FaUsers size={20} />,     iconBg: '#4F46E5', badgeColor: '#4F46E5', description: 'Manage all system users across different roles.' },
+    all:            { apiRole: '',            title: 'All Users',       icon: <FaUsers size={20} />,     iconBg: '#0F6B4F', badgeColor: '#0F6B4F', description: 'Manage all system users across different roles.' },
     candidates:     { apiRole: 'candidate',   title: 'Candidates',      icon: <FaUserTie size={20} />,   iconBg: '#10B981', badgeColor: '#10B981', description: 'Candidates looking for jobs and tracking their applications.' },
     'hr-experts':   { apiRole: 'hr_expert',    title: 'HR Experts',      icon: <FaUserCheck size={20} />, iconBg: '#3B82F6', badgeColor: '#3B82F6', description: 'HR Experts manage day-to-day recruitment activities, including vacancies, applications, candidate screening, AI matching, shortlisting, interviews, and recruitment records.' },
     'hr-managers':  { apiRole: 'hr_manager',  title: 'HR Managers',     icon: <FaShieldAlt size={20} />, iconBg: '#F59E0B', badgeColor: '#F59E0B', description: 'HR Managers are responsible for REVIEW, APPROVAL, and SUPERVISION of recruitment activities.' },
@@ -23,7 +23,8 @@ const ROLE_CONFIG = {
 
 /* ── Design Tokens ── */
 const T = {
-    primary: '#4F46E5', danger: '#EF4444',
+    // Matches the platform's single brand color (index.css --primary-color).
+    primary: '#0F6B4F', danger: '#EF4444',
     cardRadius: '16px',
     cardShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
 };

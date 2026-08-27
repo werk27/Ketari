@@ -4,7 +4,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { FaArrowLeft, FaUpload, FaCheckCircle, FaRobot, FaMoneyBillWave, FaClock, FaBriefcase, FaBookmark, FaRegBookmark, FaBuilding, FaUserCheck } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import api from '../../services/api';
+import api, { formatSalary } from '../../services/api';
 import { toast } from 'react-toastify';
 import './ApplyJob.css';
 
@@ -256,8 +256,8 @@ const ApplyJob = () => {
                                             <FaMoneyBillWave />
                                         </div>
                                         <div>
-                                            <h6 className="fw-bold mb-0">Budget</h6>
-                                            <small className="text-muted">{job.budgetType || 'Negotiable'} ({job.salary?.min ? `${job.salary.min} - ${job.salary.max}` : 'Not specified'})</small>
+                                            <h6 className="fw-bold mb-0">Salary</h6>
+                                            <small className="text-muted">{formatSalary(job.salary)}</small>
                                         </div>
                                     </div>
 

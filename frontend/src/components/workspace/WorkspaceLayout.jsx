@@ -3,12 +3,14 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { FaBars, FaSignOutAlt, FaTimes } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { getImageUrl } from '../../services/api';
-import { getNavigation, ROLE_LABELS } from './navigationConfig';
-import hrmBackdrop from '../../assets/hrm.jpg';
-import '../../styles/workspaceDark.css';
+import { getNavigation, describeEmployment } from './navigationConfig';
+import NotificationMenu from '../common/NotificationMenu';
 
 const T = {
-    primary: '#4F46E5',
+    // Aligned with the platform's single brand color (see index.css
+    // --primary-color) so the HR/Employer/Admin workspace and the
+    // candidate-facing pages read as one product, not two different apps.
+    primary: '#0F6B4F',
     sidebar: '#0F172A',
     bg: '#F8FAFC',
     border: '#E2E8F0',
@@ -16,32 +18,24 @@ const T = {
 };
 
 /**
- * Roles that represent the organization rather than an individual. They share
- * the dark photographic workspace so an HR Expert, an HR Manager and the
- * Employer recognise the same product while working in different modules.
- */
-const DARK_ROLES = ['employer', 'hr_manager', 'hr_expert'];
-
-/* The photograph is darkened from the left so headings stay legible over it,
-   then faded into the workspace colour at the bottom of the band. */
-const WORKSPACE_BACKDROP =
-    `linear-gradient(94deg, rgba(8,15,31,0.93) 0%, rgba(9,18,38,0.78) 26%, rgba(10,20,44,0.42) 48%, rgba(9,17,36,0.30) 70%, rgba(8,15,31,0.55) 100%),
-     linear-gradient(to bottom, rgba(8,15,31,0.12) 0%, rgba(8,15,31,0) 38%, rgba(8,15,31,0.60) 72%, #080F1F 100%),
-     url(${hrmBackdrop})`;
-
-/**
  * Shared application shell for every authenticated role.
  *
  * The sidebar, header and design system stay mounted while only the main
  * workspace region changes, so navigating from a dashboard never drops the
  * user onto a disconnected-looking page.
+ *
+ * Every internal role (Employer, HR Manager, HR Expert, Employee, Admin)
+ * shares this exact same plain light background - Employer/HR Manager/HR
+ * Expert previously got a dark photographic backdrop that Admin/Employee
+ * never did, which made the same platform look like two different products
+ * depending on who was logged in.
  */
 const WorkspaceLayout = () => {
     const { user, organization, logout } = useAuth();
     const location = useLocation();
     const [mobileOpen, setMobileOpen] = useState(false);
 
-    const nav = getNavigation(user?.role);
+    const nav = getNavigation(user);
     if (!nav) return <Outlet />;
 
     const allItems = nav.sections.flatMap(section => section.items);
@@ -51,11 +45,11 @@ const WorkspaceLayout = () => {
 
     const pageTitle = current ? current.label : nav.title;
     const initials = (user?.name || '?').trim().charAt(0).toUpperCase();
-    const dark = DARK_ROLES.includes(user?.role);
+    const identity = describeEmployment(user);
 
     const linkStyle = ({ isActive }) => ({
         color: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.55)',
-        background: isActive ? 'rgba(79,70,229,0.18)' : 'transparent',
+        background: isActive ? 'rgba(15,107,79,0.25)' : 'transparent',
         borderLeft: isActive ? `3px solid ${T.primary}` : '3px solid transparent',
         textDecoration: 'none',
         fontSize: '0.84rem',
@@ -146,7 +140,7 @@ const WorkspaceLayout = () => {
                 </div>
             )}
 
-            <div className={`flex-grow-1 d-flex flex-column${dark ? ' dark-workspace' : ''}`} style={{ minWidth: 0 }}>
+            <div className="flex-grow-1 d-flex flex-column" style={{ minWidth: 0 }}>
                 <header className="workspace-header bg-white border-bottom d-flex align-items-center justify-content-between px-3 px-md-4"
                         style={{ height: '62px', flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,.04)' }}>
                     <div className="d-flex align-items-center gap-3" style={{ minWidth: 0 }}>
@@ -172,17 +166,19 @@ const WorkspaceLayout = () => {
                     </div>
 
                     <div className="d-flex align-items-center gap-3">
+                        <NotificationMenu />
                         <div className="d-flex align-items-center gap-2">
                             <div className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold"
                                  style={{ width: '34px', height: '34px', fontSize: '0.85rem', background: T.primary }}>
                                 {initials}
                             </div>
-                            <div className="d-none d-sm-block">
-                                <div className="fw-semibold text-dark lh-1" style={{ fontSize: '0.84rem' }}>
+                            <div className="d-none d-sm-block" style={{ minWidth: 0, maxWidth: '240px' }}>
+                                <div className="fw-semibold text-dark lh-1 text-truncate" style={{ fontSize: '0.84rem' }}>
                                     {user?.name}
                                 </div>
-                                <small className="text-muted" style={{ fontSize: '0.7rem' }}>
-                                    {ROLE_LABELS[user?.role] || user?.role}
+                                <small className="text-muted d-block text-truncate" style={{ fontSize: '0.7rem' }}
+                                       title={identity.subtitle}>
+                                    {identity.subtitle}
                                 </small>
                             </div>
                         </div>
@@ -195,10 +191,6 @@ const WorkspaceLayout = () => {
                 </header>
 
                 <main className="workspace-main flex-grow-1 p-3 p-md-4" style={{ overflowY: 'auto' }}>
-                    {dark && (
-                        <div className="workspace-band" aria-hidden="true"
-                             style={{ backgroundImage: WORKSPACE_BACKDROP }} />
-                    )}
                     <div className="workspace-content">
                         <Outlet />
                     </div>

@@ -1,9 +1,43 @@
 const Resume = require('../models/Resume');
+const Application = require('../models/Application');
+const Employee = require('../models/Employee');
 const path = require('path');
 const fs = require('fs');
 const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 const axios = require('axios');
+
+const RESUME_CONTENT_TYPES = {
+    pdf: 'application/pdf',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+};
+
+/**
+ * Whether the caller may read this CV file.
+ *
+ * A CV belongs to the candidate. It also reaches an HR Expert, HR Manager or
+ * Employer, but only once there is a real relationship: the candidate applied
+ * to that organization, or was hired by it. Browsing the wider candidate pool
+ * (AI matching / candidate list) never grants this - see candidatePrivacy.js,
+ * which deliberately keeps even contact details hidden until an application
+ * exists. An administrator gets no special access either: recruitment data is
+ * not a platform administration concern.
+ */
+const canReadResume = async (resume, user) => {
+    if (resume.user.toString() === user.id) return true;
+
+    if (!['hr_expert', 'hr_manager', 'employer'].includes(user.role) || !user.employer) {
+        return false;
+    }
+
+    const employerId = user.employer;
+    const [appliedHere, employedHere] = await Promise.all([
+        Application.exists({ resume: resume._id, employer: employerId }),
+        Employee.exists({ 'professional.resume': resume._id, employer: employerId })
+    ]);
+
+    return !!(appliedHere || employedHere);
+};
 
 // @desc    Upload resume
 // @route   POST /api/resumes
@@ -186,5 +220,36 @@ exports.deleteResume = async (req, res) => {
             success: false,
             message: 'Server Error'
         });
+    }
+};
+
+// @desc    Stream the CV file itself (not just its parsed data)
+// @route   GET /api/resumes/:id/file
+// @access  Private (the owning candidate, or an HR user from an organization
+//          the candidate applied to / was hired by)
+exports.viewResumeFile = async (req, res) => {
+    try {
+        const resume = await Resume.findById(req.params.id);
+        if (!resume) {
+            return res.status(404).json({ success: false, message: 'Resume not found' });
+        }
+
+        if (!(await canReadResume(resume, req.user))) {
+            return res.status(403).json({
+                success: false,
+                message: 'Not authorized to view this CV'
+            });
+        }
+
+        if (!fs.existsSync(resume.filePath)) {
+            return res.status(404).json({ success: false, message: 'The stored CV file is missing' });
+        }
+
+        res.setHeader('Content-Type', RESUME_CONTENT_TYPES[resume.fileType] || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `inline; filename="${resume.fileName}"`);
+        fs.createReadStream(resume.filePath).pipe(res);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
 };

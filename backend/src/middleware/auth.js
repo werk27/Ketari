@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Employer = require('../models/Employer');
 const { userCan, capabilitiesFor, ORG_ROLES } = require('../config/permissions');
+const { resolveDelegatedCapabilities } = require('../services/delegationCapabilities');
 
 // Protect routes
 exports.protect = async (req, res, next) => {
@@ -33,6 +34,10 @@ exports.protect = async (req, res, next) => {
                 message: 'Your account has been deactivated'
             });
         }
+        // Delegations only ever happen between members of the same
+        // organization; resolveDelegatedCapabilities itself skips roles
+        // that can never be a delegate (admin, candidate).
+        req.user.delegatedCapabilities = await resolveDelegatedCapabilities(req.user);
         next();
     } catch (error) {
         return res.status(401).json({

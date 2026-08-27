@@ -1,5 +1,6 @@
 const Delegation = require('../models/Delegation');
 const User = require('../models/User');
+const notificationService = require('../services/notificationService');
 
 /**
  * Delegation of responsibility (spec §15).
@@ -15,6 +16,29 @@ const expireOverdueDelegations = async (employerId) => {
         { employer: employerId, status: 'active', endDate: { $lt: new Date() } },
         { $set: { status: 'completed', completedDate: new Date() } }
     );
+};
+
+// @desc    Active members of the caller's organization who can be delegated to
+// @route   GET /api/delegations/colleagues
+// @access  Private (delegation:create)
+//
+// Deliberately NOT the /employers/me/team roster: that endpoint only lists
+// HR staff (hr_expert, hr_manager, employer) for the "HR Team" management
+// page. A delegation can go to ANY active member of the organization,
+// including a plain employee, so it needs its own, broader listing.
+exports.getDelegationCandidates = async (req, res) => {
+    try {
+        const colleagues = await User.find({
+            employer: req.employerId,
+            status: 'active',
+            _id: { $ne: req.user.id }
+        }).select('name email role').sort({ name: 1 });
+
+        res.status(200).json({ success: true, data: colleagues });
+    } catch (error) {
+        console.error('Get Delegation Candidates Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
 };
 
 // @desc    Create a delegation
@@ -77,6 +101,16 @@ exports.createDelegation = async (req, res) => {
             notes: notes || '',
             // Active immediately when the period has already started.
             status: new Date(startDate) <= new Date() ? 'active' : 'pending'
+        });
+
+        await notificationService.notify({
+            user: delegate,
+            employer: req.employerId,
+            type: 'delegation_assigned',
+            title: 'You have been delegated a responsibility',
+            message: `${req.user.name} delegated "${title}" to you, `
+                + `from ${new Date(startDate).toLocaleDateString()} to ${new Date(endDate).toLocaleDateString()}.`,
+            link: await notificationService.linkForUser(delegate, 'delegation')
         });
 
         res.status(201).json({ success: true, data: delegation });

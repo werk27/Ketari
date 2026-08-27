@@ -1,6 +1,8 @@
 const Employee = require('../models/Employee');
 const Resume = require('../models/Resume');
 const User = require('../models/User');
+const Job = require('../models/Job');
+const JobRequisition = require('../models/JobRequisition');
 const audit = require('./auditService');
 const notifications = require('./notificationService');
 const email = require('./emailService');
@@ -43,14 +45,37 @@ const splitName = (fullName = '') => {
 };
 
 /**
+ * The approved requisition a vacancy came from, or null.
+ *
+ * `application.job` is populated with only a few fields at the call sites, so
+ * the vacancy is re-read here rather than assuming `sourceRequisition` is
+ * present on it.
+ */
+const loadSourceRequisition = async (application, job) => {
+    try {
+        const jobId = (job && job._id) || application.job;
+        if (!jobId) return null;
+
+        const vacancy = await Job.findById(jobId).select('sourceRequisition');
+        if (!vacancy || !vacancy.sourceRequisition) return null;
+
+        return await JobRequisition.findById(vacancy.sourceRequisition)
+            .select('department departmentName position positionTitle requestedBy');
+    } catch (error) {
+        console.error('Could not resolve the source requisition for a hire:', error.message);
+        return null;
+    }
+};
+
+/**
  * Create (or return the existing) Employee record for a hired application.
  *
  * Idempotent: re-deciding an application never produces a duplicate employee.
- * Returns { employee, created }.
+ * Returns { employee, created, activationSent, activationLink }.
  */
 exports.createEmployeeFromApplication = async (application, req) => {
     const existing = await Employee.findOne({ 'recruitment.application': application._id });
-    if (existing) return { employee: existing, created: false, activationSent: false };
+    if (existing) return { employee: existing, created: false, activationSent: false, activationLink: null };
 
     const candidate = await User.findById(application.applicant);
     if (!candidate) {
@@ -73,6 +98,14 @@ exports.createEmployeeFromApplication = async (application, req) => {
 
     const job = application.job && application.job.title ? application.job : null;
 
+    // A vacancy created from a Job Requisition already carries the approved
+    // department and position as real configuration references. Carrying them
+    // onto the Employee record is what actually places the new hire in the
+    // department that asked for them - without it the requesting Department
+    // Head never sees the person they recruited, and the employee's own
+    // profile shows no department at all.
+    const requisition = await loadSourceRequisition(application, job);
+
     const employee = await Employee.create({
         employer: employerId,
         user: candidate._id,
@@ -89,6 +122,8 @@ exports.createEmployeeFromApplication = async (application, req) => {
             address: { city: profile.location || '' }
         },
         employmentInfo: {
+            department: requisition ? requisition.department : null,
+            position: requisition ? requisition.position : null,
             jobTitle: job ? job.title : (profile.title || ''),
             employmentStatus: 'active',
             hireDate: new Date()
@@ -138,8 +173,8 @@ exports.createEmployeeFromApplication = async (application, req) => {
     const activationToken = candidate.getEmployeeActivationToken(employerId);
     await candidate.save({ validateBeforeSave: false });
 
-    const activationUrl =
-        `${process.env.FRONTEND_URL || 'http://localhost:3000'}/activate-employee/${activationToken}`;
+    const activationLink = `/activate-employee/${activationToken}`;
+    const activationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}${activationLink}`;
 
     await notifications.notify({
         user: candidate._id,
@@ -148,7 +183,7 @@ exports.createEmployeeFromApplication = async (application, req) => {
         title: 'You have been hired - activate your employee account',
         message: `Congratulations, you have been hired${job ? ` as ${job.title}` : ''}. `
             + 'Activate your employee account to complete your profile.',
-        link: `/activate-employee/${activationToken}`
+        link: activationLink
     });
 
     // Mail is best effort: SMTP may not be configured, and a hiring decision
@@ -170,6 +205,19 @@ exports.createEmployeeFromApplication = async (application, req) => {
         link: '/hr-expert/employees'
     });
 
+    // Close the loop for whoever raised the requisition: their staffing
+    // request has now actually produced a person.
+    if (requisition && requisition.requestedBy) {
+        await notifications.notify({
+            user: requisition.requestedBy,
+            employer: employerId,
+            type: 'hiring_decision',
+            title: 'Your requisition has been filled',
+            message: `${candidate.name} was hired${job ? ` as ${job.title}` : ''} for ${requisition.departmentName}.`,
+            link: await notifications.linkForUser(requisition.requestedBy, 'requisitions')
+        });
+    }
+
     await audit.record(req, {
         action: 'employee.onboarding_created',
         entity: 'Employee',
@@ -179,7 +227,7 @@ exports.createEmployeeFromApplication = async (application, req) => {
         to: 'employee (pending activation)'
     });
 
-    return { employee, created: true, activationSent: true };
+    return { employee, created: true, activationSent: true, activationLink };
 };
 
 exports.nextEmployeeId = nextEmployeeId;

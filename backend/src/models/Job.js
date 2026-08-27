@@ -22,6 +22,13 @@ const JobSchema = new mongoose.Schema({
         type: [String],
         default: []
     },
+    // Required competencies (soft/behavioural, distinct from technical
+    // requirements.skills) - included so an approved Job Requisition can flow
+    // straight into vacancy creation without re-typing anything.
+    competencies: {
+        type: [String],
+        default: []
+    },
     requirements: {
         education: String,
         experience: String,
@@ -101,11 +108,24 @@ const JobSchema = new mongoose.Schema({
         required: true
     },
     salary: {
-        min: Number,
-        max: Number,
+        // A single fixed amount, not a range and never "negotiable" - the
+        // business rule is one required, specific figure the employer commits
+        // to (e.g. "25,000 ETB/month"), consistent everywhere the vacancy is
+        // shown. Kept as a sub-document (not a bare number) so currency and
+        // pay period travel with the amount.
+        amount: {
+            type: Number,
+            required: [true, 'Salary is required'],
+            min: [1, 'Salary must be a positive amount']
+        },
         currency: {
             type: String,
             default: 'ETB'
+        },
+        period: {
+            type: String,
+            enum: ['hourly', 'daily', 'weekly', 'monthly', 'annual'],
+            default: 'monthly'
         }
     },
     applicationDeadline: {
@@ -166,6 +186,16 @@ const JobSchema = new mongoose.Schema({
         ref: 'Employer',
         default: null,
         index: true
+    },
+    // Present when this vacancy was created from an approved Job Requisition.
+    // Its essential staffing fields (title, department, position, headcount,
+    // employment type, requirements, salary) were approved by the HR Manager
+    // as part of that requisition and are locked from silent edits here - see
+    // jobController.updateJob and the requisition "amend" workflow.
+    sourceRequisition: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'JobRequisition',
+        default: null
     },
     // Legacy: the individual user account that created the vacancy before
     // organizations existed. Retained so historical records stay resolvable.

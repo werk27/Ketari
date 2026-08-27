@@ -37,6 +37,8 @@ const trainingRoutes = require('./routes/training');
 const complaintRoutes = require('./routes/complaints');
 const delegationRoutes = require('./routes/delegations');
 const requestRoutes = require('./routes/requests');
+const requisitionRoutes = require('./routes/requisitions');
+const departmentRoutes = require('./routes/departments');
 
 const app = express();
 
@@ -214,6 +216,8 @@ app.use('/api/training', trainingRoutes);       // Training Module
 app.use('/api/complaints', complaintRoutes);    // Complaint Module
 app.use('/api/delegations', delegationRoutes);  // Delegation Module
 app.use('/api/requests', requestRoutes);        // Employee Request Module
+app.use('/api/requisitions', requisitionRoutes); // Job Requisition Module
+app.use('/api/departments', departmentRoutes);  // Department Head workspace (read-only views)
 
 // ============================================
 // HEALTH CHECK

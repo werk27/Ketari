@@ -3,7 +3,7 @@ import { Form, Button, Row, Col, Alert } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaCheck, FaTimes, FaFileAlt, FaPaperPlane } from 'react-icons/fa';
-import api from '../../services/api';
+import api, { openAuthenticatedFile, describeApiError } from '../../services/api';
 import { Card, SectionHeader, StatusBadge, LoadingState, ErrorState } from '../workspace/ui';
 
 const DOCUMENT_TYPES = [
@@ -310,8 +310,15 @@ const EmployerVerification = () => {
                     {documents.map(doc => (
                         <div key={doc._id} className="d-flex align-items-center gap-2" style={{ fontSize: '0.79rem' }}>
                             <FaFileAlt className="text-primary" />
-                            <a href={`${api.defaults.baseURL}/employers/${employerId}/documents/${doc._id}`}
-                               target="_blank" rel="noreferrer">{doc.label}</a>
+                            <Button
+                                variant="link"
+                                className="p-0 text-decoration-underline"
+                                style={{ fontSize: 'inherit' }}
+                                onClick={() => openAuthenticatedFile(`/employers/${employerId}/documents/${doc._id}`)
+                                    .catch(err => toast.error(describeApiError(err, 'Could not open this document')))}
+                            >
+                                {doc.label}
+                            </Button>
                             <span className="text-muted">{doc.originalName}</span>
                             <Button size="sm" variant="link" className="text-danger p-0"
                                     onClick={() => removeDocument(doc._id)}>remove</Button>

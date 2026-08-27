@@ -47,7 +47,7 @@ const LanguageSwitcher = () => {
                             lineHeight: 1.5,
                             cursor: loading ? 'wait' : 'pointer',
                             background: isActive ? '#FFFFFF' : 'transparent',
-                            color: isActive ? '#4F46E5' : '#64748B',
+                            color: isActive ? '#0F6B4F' : '#64748B',
                             boxShadow: isActive ? '0 1px 2px rgba(15, 23, 42, 0.12)' : 'none',
                             transition: 'background .15s, color .15s'
                         }}

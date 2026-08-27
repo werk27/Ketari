@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Dropdown, Badge, Spinner } from 'react-bootstrap';
-import { FaBell, FaCheckCircle, FaTimesCircle, FaBriefcase, FaEnvelope, FaInfoCircle } from 'react-icons/fa';
+import {
+    FaBell, FaCheckCircle, FaTimesCircle, FaBriefcase, FaEnvelope, FaInfoCircle,
+    FaUserClock, FaGraduationCap, FaBuilding, FaUserCog, FaClipboardList
+} from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 
@@ -62,9 +65,20 @@ const NotificationMenu = () => {
     const getIcon = (type) => {
         switch (type) {
             case 'application_update': return <FaBriefcase className="text-primary" />;
+            case 'new_application': return <FaBriefcase className="text-primary" />;
             case 'interview_scheduled': return <FaEnvelope className="text-info" />;
             case 'job_approved': return <FaCheckCircle className="text-success" />;
             case 'job_rejected': return <FaTimesCircle className="text-danger" />;
+            case 'vacancy_pending_approval': return <FaBriefcase className="text-warning" />;
+            case 'hiring_decision': return <FaCheckCircle className="text-success" />;
+            case 'requisition_submitted': case 'requisition_pending_approval': return <FaClipboardList className="text-warning" />;
+            case 'requisition_returned': return <FaClipboardList className="text-danger" />;
+            case 'requisition_approved': case 'requisition_job_created': return <FaClipboardList className="text-success" />;
+            case 'requisition_rejected': return <FaClipboardList className="text-danger" />;
+            case 'leave_request': case 'leave_decision': return <FaUserClock className="text-warning" />;
+            case 'request_submitted': case 'request_decision': return <FaUserCog className="text-info" />;
+            case 'training_assigned': case 'training_decision': return <FaGraduationCap className="text-primary" />;
+            case 'employer_registered': return <FaBuilding className="text-warning" />;
             default: return <FaInfoCircle className="text-secondary" />;
         }
     };

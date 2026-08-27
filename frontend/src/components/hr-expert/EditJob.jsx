@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Spinner, Alert } from 'react-bootstrap';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { FaSave, FaTimes, FaArrowLeft, FaPlus, FaTrash } from 'react-icons/fa';
+import { useParams, useNavigate } from 'react-router-dom';
+import { FaSave, FaArrowLeft, FaPlus, FaTrash, FaLock } from 'react-icons/fa';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
@@ -12,6 +12,11 @@ const EditJob = () => {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
+    // A vacancy created from an approved Job Requisition has its essential
+    // staffing fields authorised by the HR Manager as part of that requisition.
+    // They are locked server-side, so the form must neither offer them for
+    // editing nor send them back - doing so made every save fail outright.
+    const [lockedByRequisition, setLockedByRequisition] = useState(false);
     const [formData, setFormData] = useState({
         title: '',
         department: '',
@@ -19,7 +24,6 @@ const EditJob = () => {
         location: '',
         employmentType: 'Full-Time',
         applicationDeadline: '',
-        status: 'open',
         requirements: {
             education: '',
             experience: '',
@@ -27,9 +31,9 @@ const EditJob = () => {
             qualifications: []
         },
         salary: {
-            min: '',
-            max: '',
-            currency: 'ETB'
+            amount: '',
+            currency: 'ETB',
+            period: 'monthly'
         }
     });
     const [newSkill, setNewSkill] = useState('');
@@ -43,6 +47,7 @@ const EditJob = () => {
         try {
             const response = await api.get(`/jobs/${id}`);
             const job = response.data.job;
+            setLockedByRequisition(!!job.sourceRequisition);
             setFormData({
                 title: job.title || '',
                 department: job.department || '',
@@ -50,7 +55,6 @@ const EditJob = () => {
                 location: job.location || '',
                 employmentType: job.employmentType || 'Full-Time',
                 applicationDeadline: job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().split('T')[0] : '',
-                status: job.status || 'open',
                 requirements: {
                     education: job.requirements?.education || '',
                     experience: job.requirements?.experience || '',
@@ -58,9 +62,9 @@ const EditJob = () => {
                     qualifications: job.requirements?.qualifications || []
                 },
                 salary: {
-                    min: job.salary?.min || '',
-                    max: job.salary?.max || '',
-                    currency: job.salary?.currency || 'ETB'
+                    amount: job.salary?.amount || '',
+                    currency: job.salary?.currency || 'ETB',
+                    period: job.salary?.period || 'monthly'
                 }
             });
         } catch (error) {
@@ -148,8 +152,35 @@ const EditJob = () => {
             return;
         }
 
+        // One fixed salary amount is required - never a range, never negotiable.
+        const salaryAmount = Number(formData.salary.amount);
+        if (!formData.salary.amount || Number.isNaN(salaryAmount) || salaryAmount <= 0) {
+            setError('Please enter a valid, positive salary amount');
+            setSubmitting(false);
+            return;
+        }
+
+        // Only publication details are ever sent for a requisition-sourced
+        // vacancy. `status` is never sent at all: the vacancy's workflow state
+        // is decided by submitting it and by the HR Manager's approval, never
+        // by an edit.
+        const publicationFields = {
+            description: formData.description,
+            location: formData.location,
+            applicationDeadline: formData.applicationDeadline
+        };
+
+        const payload = lockedByRequisition ? publicationFields : {
+            ...publicationFields,
+            title: formData.title,
+            department: formData.department,
+            employmentType: formData.employmentType,
+            requirements: formData.requirements,
+            salary: { ...formData.salary, amount: salaryAmount }
+        };
+
         try {
-            await api.put(`/jobs/${id}`, formData);
+            await api.put(`/jobs/${id}`, payload);
             toast.success('Job updated successfully!');
             navigate('/hr-expert/vacancies');
         } catch (error) {
@@ -196,6 +227,18 @@ const EditJob = () => {
                                     <Alert variant="danger">{error}</Alert>
                                 )}
 
+                                {lockedByRequisition && (
+                                    <Alert variant="info" className="d-flex align-items-start gap-2">
+                                        <FaLock className="mt-1 flex-shrink-0" />
+                                        <div style={{ fontSize: '0.86rem' }}>
+                                            This vacancy came from an approved Job Requisition. Its title, department,
+                                            employment type, requirements and salary were authorised by the HR Manager
+                                            and cannot be changed here - ask HR to amend the requisition and have it
+                                            re-approved. You can still edit the description, location and deadline.
+                                        </div>
+                                    </Alert>
+                                )}
+
                                 <Form onSubmit={handleSubmit}>
                                     {/* Basic Information */}
                                     <h5 className="fw-bold mb-3">Basic Information</h5>
@@ -209,6 +252,7 @@ const EditJob = () => {
                                                 onChange={handleChange}
                                                 placeholder="e.g., Software Developer"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                                 required
                                             />
                                         </Col>
@@ -221,6 +265,7 @@ const EditJob = () => {
                                                 onChange={handleChange}
                                                 placeholder="e.g., ICT"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                                 required
                                             />
                                         </Col>
@@ -246,6 +291,7 @@ const EditJob = () => {
                                                 value={formData.employmentType}
                                                 onChange={handleChange}
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                             >
                                                 <option value="Full-Time">Full-Time</option>
                                                 <option value="Part-Time">Part-Time</option>
@@ -255,19 +301,6 @@ const EditJob = () => {
                                     </Row>
 
                                     <Row>
-                                        <Col md={6} className="mb-3">
-                                            <Form.Label className="fw-semibold">Status</Form.Label>
-                                            <Form.Select
-                                                name="status"
-                                                value={formData.status}
-                                                onChange={handleChange}
-                                                className="form-control-custom"
-                                            >
-                                                <option value="open">Open</option>
-                                                <option value="closed">Closed</option>
-                                                <option value="draft">Draft</option>
-                                            </Form.Select>
-                                        </Col>
                                         <Col md={6} className="mb-3">
                                             <Form.Label className="fw-semibold">Application Deadline <span className="text-danger">*</span></Form.Label>
                                             <Form.Control
@@ -309,6 +342,7 @@ const EditJob = () => {
                                                 onChange={handleChange}
                                                 placeholder="e.g., B.Sc. Computer Science"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                             />
                                         </Col>
                                         <Col md={6} className="mb-3">
@@ -320,6 +354,7 @@ const EditJob = () => {
                                                 onChange={handleChange}
                                                 placeholder="e.g., 2+ Years"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                             />
                                         </Col>
                                     </Row>
@@ -333,9 +368,10 @@ const EditJob = () => {
                                                 onChange={(e) => setNewSkill(e.target.value)}
                                                 placeholder="Enter a skill"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                                 onKeyPress={(e) => e.key === 'Enter' && handleAddSkill()}
                                             />
-                                            <Button onClick={handleAddSkill} variant="primary-gradient">
+                                            <Button onClick={handleAddSkill} variant="primary-gradient" disabled={lockedByRequisition}>
                                                 <FaPlus />
                                             </Button>
                                         </div>
@@ -343,14 +379,16 @@ const EditJob = () => {
                                             {formData.requirements.skills.map((skill, idx) => (
                                                 <span key={idx} className="badge bg-primary p-2 d-flex align-items-center gap-2">
                                                     {skill}
-                                                    <Button
-                                                        variant="link"
-                                                        className="p-0 text-white"
-                                                        onClick={() => handleRemoveSkill(skill)}
-                                                        style={{ fontSize: '0.7rem' }}
-                                                    >
-                                                        <FaTrash />
-                                                    </Button>
+                                                    {!lockedByRequisition && (
+                                                        <Button
+                                                            variant="link"
+                                                            className="p-0 text-white"
+                                                            onClick={() => handleRemoveSkill(skill)}
+                                                            style={{ fontSize: '0.7rem' }}
+                                                        >
+                                                            <FaTrash />
+                                                        </Button>
+                                                    )}
                                                 </span>
                                             ))}
                                         </div>
@@ -365,9 +403,10 @@ const EditJob = () => {
                                                 onChange={(e) => setNewQualification(e.target.value)}
                                                 placeholder="Enter a qualification"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                                 onKeyPress={(e) => e.key === 'Enter' && handleAddQualification()}
                                             />
-                                            <Button onClick={handleAddQualification} variant="primary-gradient">
+                                            <Button onClick={handleAddQualification} variant="primary-gradient" disabled={lockedByRequisition}>
                                                 <FaPlus />
                                             </Button>
                                         </div>
@@ -375,14 +414,16 @@ const EditJob = () => {
                                             {formData.requirements.qualifications.map((qual, idx) => (
                                                 <span key={idx} className="badge bg-info p-2 d-flex align-items-center gap-2">
                                                     {qual}
-                                                    <Button
-                                                        variant="link"
-                                                        className="p-0 text-white"
-                                                        onClick={() => handleRemoveQualification(qual)}
-                                                        style={{ fontSize: '0.7rem' }}
-                                                    >
-                                                        <FaTrash />
-                                                    </Button>
+                                                    {!lockedByRequisition && (
+                                                        <Button
+                                                            variant="link"
+                                                            className="p-0 text-white"
+                                                            onClick={() => handleRemoveQualification(qual)}
+                                                            style={{ fontSize: '0.7rem' }}
+                                                        >
+                                                            <FaTrash />
+                                                        </Button>
+                                                    )}
                                                 </span>
                                             ))}
                                         </div>
@@ -390,30 +431,26 @@ const EditJob = () => {
 
                                     <hr className="my-4" />
 
-                                    {/* Salary Information */}
+                                    {/* Salary Information - one fixed amount, never a range or "negotiable" */}
                                     <h5 className="fw-bold mb-3">Salary Information</h5>
                                     <Row>
-                                        <Col md={4} className="mb-3">
-                                            <Form.Label className="fw-semibold">Min Salary</Form.Label>
+                                        <Col md={5} className="mb-3">
+                                            <Form.Label className="fw-semibold">Salary Amount <span className="text-danger">*</span></Form.Label>
                                             <Form.Control
                                                 type="number"
-                                                name="salary.min"
-                                                value={formData.salary.min}
+                                                min="1"
+                                                step="1"
+                                                name="salary.amount"
+                                                value={formData.salary.amount}
                                                 onChange={handleChange}
-                                                placeholder="Min"
+                                                placeholder="e.g. 25000"
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
+                                                required
                                             />
-                                        </Col>
-                                        <Col md={4} className="mb-3">
-                                            <Form.Label className="fw-semibold">Max Salary</Form.Label>
-                                            <Form.Control
-                                                type="number"
-                                                name="salary.max"
-                                                value={formData.salary.max}
-                                                onChange={handleChange}
-                                                placeholder="Max"
-                                                className="form-control-custom"
-                                            />
+                                            <Form.Text className="text-muted">
+                                                Fixed amount, not a range.
+                                            </Form.Text>
                                         </Col>
                                         <Col md={4} className="mb-3">
                                             <Form.Label className="fw-semibold">Currency</Form.Label>
@@ -422,10 +459,27 @@ const EditJob = () => {
                                                 value={formData.salary.currency}
                                                 onChange={handleChange}
                                                 className="form-control-custom"
+                                                disabled={lockedByRequisition}
                                             >
                                                 <option value="ETB">ETB</option>
                                                 <option value="USD">USD</option>
                                                 <option value="EUR">EUR</option>
+                                            </Form.Select>
+                                        </Col>
+                                        <Col md={3} className="mb-3">
+                                            <Form.Label className="fw-semibold">Pay period</Form.Label>
+                                            <Form.Select
+                                                name="salary.period"
+                                                value={formData.salary.period}
+                                                onChange={handleChange}
+                                                className="form-control-custom"
+                                                disabled={lockedByRequisition}
+                                            >
+                                                <option value="hourly">Hourly</option>
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="monthly">Monthly</option>
+                                                <option value="annual">Annual</option>
                                             </Form.Select>
                                         </Col>
                                     </Row>

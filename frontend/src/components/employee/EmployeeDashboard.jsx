@@ -5,6 +5,8 @@ import {
     FaCalendarAlt, FaClipboardList, FaGraduationCap, FaUserClock, FaPlus, FaSignInAlt, FaSignOutAlt
 } from 'react-icons/fa';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+import { describeEmployment } from '../workspace/navigationConfig';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -23,6 +25,8 @@ const TABS = [
  * training participation and attendance.
  */
 const EmployeeDashboard = () => {
+    const { user, organization } = useAuth();
+    const identity = describeEmployment(user);
     const [tab, setTab] = useState('leave');
     const [data, setData] = useState({ leaves: [], requests: [], trainings: [], attendance: null, balances: [] });
     const [loading, setLoading] = useState(true);
@@ -120,6 +124,23 @@ const EmployeeDashboard = () => {
                 <div className="text-muted" style={{ fontSize: '0.82rem' }}>
                     Submit requests, track approvals and review your own records.
                 </div>
+                {identity.subtitle && (
+                    <div className="d-flex align-items-center gap-2 flex-wrap mt-2">
+                        <span className="badge rounded-pill"
+                              style={{ background: '#ECFDF5', color: '#0F6B4F', fontSize: '0.72rem', fontWeight: 600 }}>
+                            {identity.title}
+                        </span>
+                        {identity.department && (
+                            <span className="text-muted" style={{ fontSize: '0.76rem' }}>{identity.department}</span>
+                        )}
+                        {identity.isDepartmentHead && identity.positionTitle && (
+                            <span className="text-muted" style={{ fontSize: '0.76rem' }}>{identity.positionTitle}</span>
+                        )}
+                        {organization?.name && (
+                            <span className="text-muted" style={{ fontSize: '0.76rem' }}>at {organization.name}</span>
+                        )}
+                    </div>
+                )}
             </div>
 
             <div className="row g-3 mb-4">
@@ -223,7 +244,18 @@ const EmployeeDashboard = () => {
                                                     {new Date(leave.startDate).toLocaleDateString()} –{' '}
                                                     {new Date(leave.endDate).toLocaleDateString()}
                                                 </td>
-                                                <td className="text-center" style={{ fontSize: '0.84rem' }}>{leave.totalDays}</td>
+                                                <td className="text-center" style={{ fontSize: '0.84rem' }}>
+                                                    {leave.totalDays}
+                                                    {leave.payBreakdown && (
+                                                        <div className="text-muted" style={{ fontSize: '0.68rem' }}>
+                                                            {[
+                                                                leave.payBreakdown.fullPayDays ? `${leave.payBreakdown.fullPayDays} full-pay` : null,
+                                                                leave.payBreakdown.halfPayDays ? `${leave.payBreakdown.halfPayDays} half-pay` : null,
+                                                                leave.payBreakdown.unpaidDays ? `${leave.payBreakdown.unpaidDays} unpaid` : null
+                                                            ].filter(Boolean).join(', ')}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td>
                                                     <StatusBadge status={leave.status} />
                                                     {leave.rejectionReason && (

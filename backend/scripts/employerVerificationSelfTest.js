@@ -59,7 +59,8 @@ const vacancy = (title) => ({
     department: 'IT',
     description: 'Created by the employer verification self test.',
     location: 'Hawassa',
-    applicationDeadline: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString()
+    applicationDeadline: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
+    salary: { amount: 20000, currency: 'ETB', period: 'monthly' }
 });
 
 const companyEvidence = {

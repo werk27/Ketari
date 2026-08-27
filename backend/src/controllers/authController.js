@@ -1,5 +1,8 @@
 const User = require('../models/User');
 const Employer = require('../models/Employer');
+const Employee = require('../models/Employee');
+const { loadConfiguration, headedDepartments } = require('../services/departmentScope');
+const { resolveDelegatedCapabilities } = require('../services/delegationCapabilities');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { validationResult } = require('express-validator');
@@ -41,20 +44,73 @@ const isDatabaseUnavailable = (error) => (
  * has to re-fetch the profile just to get a complete user object. Both `id` and
  * `_id` are exposed because call sites in the UI use either spelling.
  */
-const buildAuthPayload = (user) => ({
-    id: user._id,
-    _id: user._id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    status: user.status || 'active',
-    employer: user.employer || null,
-    department: user.department || '',
-    jobTitle: user.jobTitle || '',
-    profile: user.profile,
-    company: user.company,
-    capabilities: capabilitiesFor(user)
-});
+const buildAuthPayload = async (user) => {
+    const delegated = await resolveDelegatedCapabilities(user);
+    return {
+        id: user._id,
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status || 'active',
+        employer: user.employer || null,
+        department: user.department || '',
+        jobTitle: user.jobTitle || '',
+        profile: user.profile,
+        company: user.company,
+        // Merge role/employer-granted capabilities with anything temporarily
+        // inherited via an active delegation, so the frontend's own can()
+        // checks (which decide whether to even show an action button) agree
+        // with what the backend will actually allow.
+        capabilities: [...new Set([...capabilitiesFor(user), ...delegated])],
+        employment: await loadEmployment(user)
+    };
+};
+
+/**
+ * Where this person actually sits in the organization they signed in to.
+ *
+ * The account `role` only says which workspace someone gets ("employee"); it
+ * says nothing about their position. The real position lives on their Employee
+ * record (or the organization's configured Position), and being a Department
+ * Head is recorded as `Configuration.departments[].manager` - which is what
+ * authorizes them to raise Job Requisitions (see requisitionController).
+ * None of that reached the client before, so every internal member was
+ * presented as a bare role. Resolved here once so login, register and
+ * /auth/me all carry it.
+ */
+const loadEmployment = async (user) => {
+    if (!user.employer) return null;
+
+    const [employee, config] = await Promise.all([
+        Employee.findOne({ user: user._id, employer: user.employer })
+            .select('employeeId employmentInfo')
+            .lean(),
+        loadConfiguration(user.employer)
+    ]);
+
+    const departments = (config && config.departments) || [];
+    const positions = (config && config.positions) || [];
+    const info = (employee && employee.employmentInfo) || {};
+
+    const sameId = (a, b) => a && b && String(a) === String(b);
+    const department = departments.find(d => sameId(d._id, info.department)) || null;
+    const position = positions.find(p => sameId(p._id, info.position)) || null;
+
+    // A department can only have one head, but one person may head several.
+    const headOf = (await headedDepartments(user, user.employer, config))
+        .map(d => ({ id: d._id, name: d.name }));
+
+    return {
+        employeeId: (employee && employee.employeeId) || '',
+        jobTitle: (position && position.title) || info.jobTitle || user.jobTitle || '',
+        department: department ? department._id : null,
+        departmentName: (department && department.name) || user.department || '',
+        employmentStatus: info.employmentStatus || '',
+        isDepartmentHead: headOf.length > 0,
+        headOfDepartments: headOf
+    };
+};
 
 /** The organization a user belongs to, using one projection everywhere. */
 const loadOrganization = async (user) => {
@@ -146,7 +202,7 @@ exports.register = async (req, res) => {
         res.status(201).json({
             success: true,
             token,
-            user: buildAuthPayload(user),
+            user: await buildAuthPayload(user),
             organization: await loadOrganization(user)
         });
     } catch (error) {
@@ -255,7 +311,7 @@ exports.login = async (req, res) => {
         res.status(200).json({
             success: true,
             token,
-            user: buildAuthPayload(user),
+            user: await buildAuthPayload(user),
             organization: await loadOrganization(user)
         });
     } catch (error) {
@@ -284,7 +340,7 @@ exports.getMe = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            user: buildAuthPayload(user),
+            user: await buildAuthPayload(user),
             organization: await loadOrganization(user)
         });
     } catch (error) {
@@ -320,7 +376,7 @@ exports.updateProfile = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            user: buildAuthPayload(user)
+            user: await buildAuthPayload(user)
         });
     } catch (error) {
         console.error(error);
@@ -589,7 +645,7 @@ exports.activateEmployee = async (req, res) => {
             success: true,
             message: 'Your employee account is active.',
             token: generateToken(user._id),
-            user: buildAuthPayload(user),
+            user: await buildAuthPayload(user),
             organization: await loadOrganization(user)
         });
     } catch (error) {

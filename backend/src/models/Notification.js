@@ -19,6 +19,9 @@ const NotificationSchema = new mongoose.Schema({
             // Recruitment
             'application_update', 'interview_scheduled', 'job_approved', 'job_rejected',
             'vacancy_pending_approval', 'new_application', 'hiring_decision',
+            // Job Requisition
+            'requisition_submitted', 'requisition_returned', 'requisition_pending_approval',
+            'requisition_approved', 'requisition_rejected', 'requisition_job_created',
             // HR operations
             'leave_request', 'leave_decision', 'request_submitted', 'request_decision',
             'training_assigned', 'training_decision', 'delegation_assigned',

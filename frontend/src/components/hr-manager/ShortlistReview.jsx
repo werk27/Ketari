@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Form, Modal } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaCheck, FaTimes, FaUserCheck } from 'react-icons/fa';
+import { FaCheck, FaTimes, FaUserCheck, FaIdBadge } from 'react-icons/fa';
 import api, { describeApiError } from '../../services/api';
 import { Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState, MatchScore } from '../workspace/ui';
+import CandidateProfileModal from '../workspace/CandidateProfileModal';
 
 /**
  * HR Manager decision queue.
@@ -34,6 +35,8 @@ const ShortlistReview = () => {
     const [approveStatus, setApproveStatus] = useState('hired');
     const [reason, setReason] = useState('');
     const [busy, setBusy] = useState(false);
+    const [profileApp, setProfileApp] = useState(null);
+    const [showProfileModal, setShowProfileModal] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -59,6 +62,11 @@ const ShortlistReview = () => {
     const closeDecision = () => {
         setTarget(null);
         setReason('');
+    };
+
+    const openProfile = (application) => {
+        setProfileApp(application);
+        setShowProfileModal(true);
     };
 
     const submit = async () => {
@@ -141,6 +149,14 @@ const ShortlistReview = () => {
                                     {typeof app.matchScore === 'number' && (
                                         <MatchScore score={app.matchScore} details={app.matchDetails} compact />
                                     )}
+                                    <Button
+                                        size="sm"
+                                        variant="outline-primary"
+                                        onClick={() => openProfile(app)}
+                                        title="View full profile, AI analysis, screening and interview details"
+                                    >
+                                        <FaIdBadge className="me-1" /> View Candidate
+                                    </Button>
                                     {app.job?._id && (
                                         <Link to={`/hr-manager/applications/${app.job._id}`}
                                               className="text-decoration-none"
@@ -233,6 +249,12 @@ const ShortlistReview = () => {
                     </Button>
                 </Modal.Footer>
             </Modal>
+
+            <CandidateProfileModal
+                show={showProfileModal}
+                onHide={() => setShowProfileModal(false)}
+                application={profileApp}
+            />
         </div>
     );
 };

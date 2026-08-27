@@ -4,6 +4,7 @@ const {
     createDelegation,
     getDelegations,
     getOrganizationDelegations,
+    getDelegationCandidates,
     updateDelegationStatus
 } = require('../controllers/delegationController');
 const { protect, can, withEmployerScope } = require('../middleware/auth');
@@ -13,6 +14,11 @@ const { CAPABILITIES } = require('../config/permissions');
 // @desc    All delegations within the caller's organization
 // @access  Private (delegation:view)
 router.get('/organization', protect, can(CAPABILITIES.DELEGATION_VIEW), withEmployerScope, getOrganizationDelegations);
+
+// @route   GET /api/delegations/colleagues
+// @desc    Active organization members who can be delegated to
+// @access  Private (delegation:create)
+router.get('/colleagues', protect, can(CAPABILITIES.DELEGATION_CREATE), withEmployerScope, getDelegationCandidates);
 
 // @route   POST /api/delegations
 // @desc    Delegate a responsibility to a colleague

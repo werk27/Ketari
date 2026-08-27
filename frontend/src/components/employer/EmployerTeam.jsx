@@ -1,28 +1,38 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Modal, Button, Form } from 'react-bootstrap';
+import { Link } from 'react-router-dom';
+import { Button } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaUserFriends, FaPlus } from 'react-icons/fa';
+import { FaUserFriends, FaUsers } from 'react-icons/fa';
 import api from '../../services/api';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
 
-const EMPTY_FORM = { name: '', email: '', password: '', role: 'hr_expert', department: '', jobTitle: '' };
+// Exact label per role rather than a hr_manager/else ternary - the backend now
+// scopes this list to hr_expert/hr_manager only, but a mislabeled fallback
+// here previously showed plain employees as "HR Expert" whenever that
+// scoping slipped, so this stays explicit rather than defaulting.
+const ROLE_LABELS = { hr_expert: 'HR Expert', hr_manager: 'HR Manager', employee: 'Employee', employer: 'Employer' };
 
 /**
- * HR team management for the Employer.
+ * HR team overview for the Employer - read only.
  *
- * The employer may only create recruitment staff (HR Expert / HR Manager).
- * Platform administrators are never created here - that is a System
- * Administrator responsibility, and the backend rejects any other role.
+ * A role must only ever be granted to an existing Employee record (see
+ * employeeController.assignEmployeeRole), never created as a standalone user
+ * account. This screen used to let the employer type in a name/email/password
+ * and role directly, creating a User with no Employee behind it at all - the
+ * exact thing that rule forbids, and it left the person invisible in the
+ * Employee Directory despite having full HR access.
+ *
+ * Adding and role-assigning now happens only in the Employee Directory
+ * (Add Employee -> Create/Link Account -> Assign Role). This page keeps the
+ * quick-glance list and the activate/deactivate action, since those don't
+ * create anything and are still useful here.
  */
 const EmployerTeam = () => {
     const [team, setTeam] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState(EMPTY_FORM);
-    const [saving, setSaving] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -38,22 +48,6 @@ const EmployerTeam = () => {
     }, []);
 
     useEffect(() => { load(); }, [load]);
-
-    const submit = async (e) => {
-        e.preventDefault();
-        setSaving(true);
-        try {
-            await api.post('/employers/me/team', form);
-            toast.success(`${form.name} added to your HR team`);
-            setShowForm(false);
-            setForm(EMPTY_FORM);
-            load();
-        } catch (err) {
-            toast.error(err.response?.data?.message || 'Could not add team member');
-        } finally {
-            setSaving(false);
-        }
-    };
 
     const changeStatus = async (member, status) => {
         try {
@@ -77,8 +71,9 @@ const EmployerTeam = () => {
                     title="HR Team"
                     description="HR Experts run recruitment; HR Managers review and approve it."
                     action={
-                        <Button size="sm" onClick={() => setShowForm(true)} className="d-flex align-items-center gap-2">
-                            <FaPlus size={11} /> Add member
+                        <Button as={Link} to="/employer/employees" size="sm" variant="outline-primary"
+                                className="d-flex align-items-center gap-2">
+                            <FaUsers size={11} /> Manage in Employee Directory
                         </Button>
                     }
                 />
@@ -87,8 +82,12 @@ const EmployerTeam = () => {
                     <EmptyState
                         icon={FaUserFriends}
                         title="No HR team members yet"
-                        description="Add an HR Expert to create vacancies and an HR Manager to approve them."
-                        action={<Button size="sm" onClick={() => setShowForm(true)}>Add your first member</Button>}
+                        description="Add an employee in the Employee Directory, then assign them the HR Expert or HR Manager role."
+                        action={
+                            <Button as={Link} to="/employer/employees" size="sm">
+                                Go to Employee Directory
+                            </Button>
+                        }
                     />
                 ) : (
                     <div className="table-responsive">
@@ -110,7 +109,7 @@ const EmployerTeam = () => {
                                             <div className="text-muted" style={{ fontSize: '0.75rem' }}>{member.email}</div>
                                         </td>
                                         <td style={{ fontSize: '0.82rem' }}>
-                                            {member.role === 'hr_manager' ? 'HR Manager' : 'HR Expert'}
+                                            {ROLE_LABELS[member.role] || member.role}
                                         </td>
                                         <td className="text-muted" style={{ fontSize: '0.82rem' }}>
                                             {member.department || '—'}
@@ -136,59 +135,9 @@ const EmployerTeam = () => {
                     </div>
                 )}
             </Card>
-
-            <Modal show={showForm} onHide={() => setShowForm(false)} centered>
-                <Form onSubmit={submit}>
-                    <Modal.Header closeButton>
-                        <Modal.Title style={{ fontSize: '1.05rem' }}>Add HR team member</Modal.Title>
-                    </Modal.Header>
-                    <Modal.Body>
-                        <Form.Group className="mb-3">
-                            <Form.Label style={{ fontSize: '0.84rem' }}>Full name</Form.Label>
-                            <Form.Control required value={form.name}
-                                          onChange={e => setForm({ ...form, name: e.target.value })} />
-                        </Form.Group>
-                        <Form.Group className="mb-3">
-                            <Form.Label style={{ fontSize: '0.84rem' }}>Email</Form.Label>
-                            <Form.Control type="email" required value={form.email}
-                                          onChange={e => setForm({ ...form, email: e.target.value })} />
-                        </Form.Group>
-                        <Form.Group className="mb-3">
-                            <Form.Label style={{ fontSize: '0.84rem' }}>Temporary password</Form.Label>
-                            <Form.Control type="password" required minLength={6} value={form.password}
-                                          onChange={e => setForm({ ...form, password: e.target.value })} />
-                            <Form.Text className="text-muted" style={{ fontSize: '0.74rem' }}>
-                                At least 6 characters. The member can change it after signing in.
-                            </Form.Text>
-                        </Form.Group>
-                        <Form.Group className="mb-3">
-                            <Form.Label style={{ fontSize: '0.84rem' }}>Role</Form.Label>
-                            <Form.Select value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                                <option value="hr_expert">HR Expert — creates and processes recruitment</option>
-                                <option value="hr_manager">HR Manager — reviews and approves recruitment</option>
-                            </Form.Select>
-                        </Form.Group>
-                        <div className="row g-2">
-                            <div className="col-6">
-                                <Form.Label style={{ fontSize: '0.84rem' }}>Department</Form.Label>
-                                <Form.Control value={form.department}
-                                              onChange={e => setForm({ ...form, department: e.target.value })} />
-                            </div>
-                            <div className="col-6">
-                                <Form.Label style={{ fontSize: '0.84rem' }}>Job title</Form.Label>
-                                <Form.Control value={form.jobTitle}
-                                              onChange={e => setForm({ ...form, jobTitle: e.target.value })} />
-                            </div>
-                        </div>
-                    </Modal.Body>
-                    <Modal.Footer>
-                        <Button variant="light" onClick={() => setShowForm(false)}>Cancel</Button>
-                        <Button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add member'}</Button>
-                    </Modal.Footer>
-                </Form>
-            </Modal>
         </div>
     );
 };
 
 export default EmployerTeam;
+

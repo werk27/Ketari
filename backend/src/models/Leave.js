@@ -37,6 +37,15 @@ const LeaveSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    // Sick Leave only: how many of totalDays fall into each statutory pay
+    // tier (full pay / half pay / unpaid), based on how much Sick Leave the
+    // employee had already used this year before this request. Left unset
+    // for every other leave type, which are paid or unpaid as a whole.
+    payBreakdown: {
+        fullPayDays: { type: Number, default: undefined },
+        halfPayDays: { type: Number, default: undefined },
+        unpaidDays: { type: Number, default: undefined }
+    },
     status: {
         type: String,
         enum: ['pending', 'under_review', 'approved', 'rejected', 'cancelled'],

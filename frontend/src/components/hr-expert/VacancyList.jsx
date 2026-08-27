@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button } from 'react-bootstrap';
+import { Button, Modal } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaBriefcase, FaPlusCircle, FaPaperPlane, FaEdit, FaUsers, FaRobot } from 'react-icons/fa';
+import { FaBriefcase, FaPlusCircle, FaPaperPlane, FaEdit, FaUsers, FaRobot, FaTrash } from 'react-icons/fa';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -18,9 +18,18 @@ const FILTERS = [
 ];
 
 /**
+ * Statuses in which a vacancy is still the HR Expert's own work and can be
+ * edited, submitted or deleted. Mirrors EDITABLE_STATUSES in the backend's
+ * jobController so the workspace never offers an action the API would refuse:
+ * once submitted, the vacancy belongs to the HR Manager's review.
+ */
+const OWN_WORK_STATUSES = ['draft', 'rejected'];
+
+/**
  * Vacancy list for the recruitment workspace.
  *
- * HR Experts see and act on the vacancies they own (edit, submit for approval).
+ * HR Experts see and act on the vacancies they own (edit, submit for approval,
+ * delete while still unsubmitted).
  * HR Managers and Employers see the whole organization in read-only form.
  */
 const VacancyList = () => {
@@ -30,6 +39,7 @@ const VacancyList = () => {
     const [error, setError] = useState(null);
     const [filter, setFilter] = useState('all');
     const [busyId, setBusyId] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     const isExpert = user?.role === 'hr_expert';
 
@@ -62,6 +72,22 @@ const VacancyList = () => {
         }
     };
 
+    const confirmDelete = async () => {
+        const job = deleteTarget;
+        if (!job) return;
+        setBusyId(job._id);
+        try {
+            await api.delete(`/jobs/${job._id}`);
+            toast.success(`"${job.title}" was deleted`);
+            setJobs(prev => prev.filter(item => item._id !== job._id));
+            setDeleteTarget(null);
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not delete vacancy');
+        } finally {
+            setBusyId(null);
+        }
+    };
+
     const visible = useMemo(() => {
         if (filter === 'all') return jobs;
         if (filter === 'published') {
@@ -74,11 +100,12 @@ const VacancyList = () => {
     if (error) return <ErrorState message={error} onRetry={load} />;
 
     return (
+        <>
         <Card className="p-3">
             <SectionHeader
                 title={isExpert ? 'My Vacancies' : 'Organization Vacancies'}
                 description={isExpert
-                    ? 'Vacancies you created. Drafts and returned vacancies can be edited and submitted.'
+                    ? 'Vacancies you created. Drafts and returned vacancies can be edited, submitted or deleted.'
                     : 'All vacancies belonging to your organization.'}
                 action={isExpert && (
                     <Link to="/hr-expert/job-creator" className="btn btn-sm btn-primary d-flex align-items-center gap-2">
@@ -125,8 +152,10 @@ const VacancyList = () => {
                         </thead>
                         <tbody>
                             {visible.map(job => {
-                                const canEdit = isExpert && ['draft', 'rejected', 'pending_approval'].includes(job.status);
-                                const canSubmit = isExpert && ['draft', 'rejected'].includes(job.status);
+                                const isOwnWork = isExpert && OWN_WORK_STATUSES.includes(job.status);
+                                const canEdit = isOwnWork;
+                                const canSubmit = isOwnWork;
+                                const canDelete = isOwnWork && (job.applications?.length || 0) === 0;
                                 const isLive = ['published', 'approved', 'open'].includes(job.status);
 
                                 return (
@@ -178,6 +207,13 @@ const VacancyList = () => {
                                                         </Link>
                                                     </>
                                                 )}
+                                                {canDelete && (
+                                                    <Button size="sm" variant="outline-danger" disabled={busyId === job._id}
+                                                            className="d-flex align-items-center gap-1"
+                                                            onClick={() => setDeleteTarget(job)}>
+                                                        <FaTrash size={10} /> Delete
+                                                    </Button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -188,6 +224,26 @@ const VacancyList = () => {
                 </div>
             )}
         </Card>
+
+        <Modal show={!!deleteTarget} onHide={() => setDeleteTarget(null)} centered>
+            <Modal.Header closeButton>
+                <Modal.Title style={{ fontSize: '1.05rem' }}>Delete this vacancy?</Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+                <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
+                    <span className="fw-semibold text-dark">{deleteTarget?.title}</span> will be permanently
+                    removed. This cannot be undone. Only vacancies you have not submitted yet can be deleted -
+                    once a vacancy is with the HR Manager or published, close it instead.
+                </p>
+            </Modal.Body>
+            <Modal.Footer>
+                <Button variant="light" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+                <Button variant="danger" onClick={confirmDelete} disabled={busyId === deleteTarget?._id}>
+                    Delete vacancy
+                </Button>
+            </Modal.Footer>
+        </Modal>
+        </>
     );
 };
 

@@ -237,8 +237,8 @@
 
 .dark-workspace .form-control:focus,
 .dark-workspace .form-select:focus {
-    border-color: #6366F1 !important;
-    box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.25);
+    border-color: #0F6B4F !important;
+    box-shadow: 0 0 0 0.2rem rgba(15, 107, 79, 0.25);
 }
 
 .dark-workspace .form-control:disabled,
@@ -253,8 +253,8 @@
 }
 
 .dark-workspace .form-check-input:checked {
-    background-color: #4F46E5;
-    border-color: #4F46E5;
+    background-color: #0F6B4F;
+    border-color: #0F6B4F;
 }
 
 .dark-workspace .form-text {
@@ -355,8 +355,8 @@
 }
 
 .dark-workspace .page-item.active .page-link {
-    background: #4F46E5;
-    border-color: #4F46E5;
+    background: #0F6B4F;
+    border-color: #0F6B4F;
     color: #fff;
 }
 

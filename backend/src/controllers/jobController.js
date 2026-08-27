@@ -1,11 +1,34 @@
 const Job = require('../models/Job');
 const Application = require('../models/Application');
 const User = require('../models/User');
+const JobRequisition = require('../models/JobRequisition');
 const { validationResult } = require('express-validator');
 const { matchCandidates } = require('../services/matchingService');
 const { applicantIdsFor, maskCandidate } = require('../services/candidatePrivacy');
+const notificationService = require('../services/notificationService');
+const { REQUISITION_LOCKED_FIELDS, buildFieldsFromRequisition } = require('../services/requisitionSync');
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
+
+/**
+ * Statuses in which a vacancy is still the HR Expert's own work.
+ *
+ * Everything else has either been handed to the HR Manager for approval or
+ * already published, so it may no longer be edited or deleted directly - see
+ * updateJob and deleteJob.
+ */
+const EDITABLE_STATUSES = ['draft', 'rejected'];
+
+/** Tell the HR Expert how to legitimately change a vacancy they can no longer touch. */
+const reworkHint = (status) => {
+    if (status === 'pending_approval') {
+        return 'It is awaiting HR Manager approval - ask them to return it to you first.';
+    }
+    if (PUBLIC_STATUSES.includes(status)) {
+        return 'It is already published; close it instead and create a new vacancy.';
+    }
+    return 'Only draft or returned vacancies can still be changed.';
+};
 
 /** Append an entry to the vacancy audit trail. */
 const recordStatus = (job, status, userId, note = '') => {
@@ -44,6 +67,7 @@ exports.createJob = async (req, res) => {
         if (!errors.isEmpty()) {
             return res.status(400).json({
                 success: false,
+                message: errors.array().map(e => e.msg).join(', '),
                 errors: errors.array()
             });
         }
@@ -59,11 +83,38 @@ exports.createJob = async (req, res) => {
             statusHistory: _ignoredHistory,
             submitForApproval: _ignoredFlag,
             action: _ignoredAction,
+            requisitionId,
+            sourceRequisition: _ignoredSourceRequisition,
             ...safeBody
         } = req.body;
 
+        // Creating a vacancy from an approved Job Requisition: its essential
+        // staffing fields are pre-filled and locked (see updateJob below) so
+        // the HR Expert only has to add the publication-specific details
+        // (description, location, deadline, ...) rather than re-type them.
+        let requisition = null;
+        if (requisitionId) {
+            requisition = await JobRequisition.findById(requisitionId);
+            if (!requisition || requisition.employer.toString() !== req.employerId.toString()) {
+                return res.status(404).json({ success: false, message: 'Requisition not found' });
+            }
+            if (requisition.status !== 'approved') {
+                return res.status(400).json({
+                    success: false,
+                    message: `Only an approved requisition can be used to create a vacancy (current status: ${requisition.status})`
+                });
+            }
+        }
+
+        const requisitionFields = requisition ? buildFieldsFromRequisition(requisition) : {};
+
         const job = new Job({
             ...safeBody,
+            ...requisitionFields,
+            requirements: requisition
+                ? { ...(safeBody.requirements || {}), ...requisitionFields.requirements }
+                : safeBody.requirements,
+            sourceRequisition: requisition ? requisition._id : null,
             employer: req.employerId,
             hr_expert: req.user.id,
             createdByUser: req.user.id,
@@ -80,6 +131,37 @@ exports.createJob = async (req, res) => {
             submitForApproval ? 'Submitted for HR Manager approval' : 'Draft created'
         );
         await job.save();
+
+        if (requisition) {
+            requisition.status = 'job_created';
+            requisition.linkedJob = job._id;
+            requisition.auditTrail.push({
+                action: 'job_created',
+                by: req.user.id,
+                at: new Date(),
+                note: `Vacancy "${job.title}" created from this requisition`
+            });
+            await requisition.save();
+
+            const recipients = new Set([
+                requisition.requestedBy?.toString(),
+                requisition.processedBy?.toString(),
+                requisition.decidedBy?.toString()
+            ].filter(Boolean));
+            // These three people are in different roles - typically the
+            // Department Head who raised it, the HR Expert who processed it and
+            // the HR Manager who approved it - so the link has to follow the
+            // recipient. A fixed '/hr-expert/…' link sent the requesting
+            // Department Head to a workspace they cannot open.
+            await Promise.all(Array.from(recipients).map(async userId => notificationService.notify({
+                user: userId,
+                employer: req.employerId,
+                type: 'requisition_job_created',
+                title: 'Vacancy created from requisition',
+                message: `"${job.title}" was created from the approved requisition and is ready to be submitted for publishing.`,
+                link: await notificationService.linkForUser(userId, 'requisitions')
+            })));
+        }
 
         res.status(201).json({
             success: true,
@@ -144,9 +226,11 @@ exports.getJobs = async (req, res) => {
         }
 
         if (minSalary || maxSalary) {
-            query.salary = {};
-            if (minSalary) query.salary.min = { $gte: parseInt(minSalary) };
-            if (maxSalary) query.salary.max = { $lte: parseInt(maxSalary) };
+            // Filters candidates search by, against each vacancy's one fixed
+            // salary.amount - not a range stored on the job itself.
+            query['salary.amount'] = {};
+            if (minSalary) query['salary.amount'].$gte = parseInt(minSalary);
+            if (maxSalary) query['salary.amount'].$lte = parseInt(maxSalary);
         }
 
         const jobs = await Job.find(query)
@@ -228,6 +312,15 @@ exports.getJob = async (req, res) => {
 // @access  Private (HR Expert who owns it)
 exports.updateJob = async (req, res) => {
     try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({
+                success: false,
+                message: errors.array().map(e => e.msg).join(', '),
+                errors: errors.array()
+            });
+        }
+
         const { job, error } = await findScopedJob(req.params.id, req);
         if (error) {
             return res.status(error.code).json({ success: false, message: error.message });
@@ -241,11 +334,17 @@ exports.updateJob = async (req, res) => {
             });
         }
 
-        // Approved/published vacancies are locked; corrections go back through approval.
-        if (!['draft', 'rejected', 'pending_approval'].includes(job.status)) {
+        // Only work that is still the HR Expert's own may be edited.
+        //
+        // A submitted vacancy belongs to the HR Manager's review: editing it
+        // underneath a live review would change what is being approved after
+        // the fact, so the manager could authorise text they never saw. It has
+        // to come back through rejection first. Approved/published vacancies
+        // are locked for the same reason - candidates have already seen them.
+        if (!EDITABLE_STATUSES.includes(job.status)) {
             return res.status(400).json({
                 success: false,
-                message: `A vacancy with status "${job.status}" can no longer be edited`
+                message: `A vacancy with status "${job.status}" can no longer be edited. ${reworkHint(job.status)}`
             });
         }
 
@@ -253,8 +352,25 @@ exports.updateJob = async (req, res) => {
             status: _s, employer: _e, approvedBy: _ab, approvedAt: _aa,
             rejectedBy: _rb, rejectedAt: _ra, statusHistory: _sh, hr_expert: _hr,
             createdByUser: _cbu, submittedBy: _sb, submittedAt: _sa,
-            submitForApproval: _sfa, action: _act, ...updates
+            submitForApproval: _sfa, action: _act, sourceRequisition: _sr, ...updates
         } = req.body;
+
+        // A vacancy created from an approved Job Requisition has its essential
+        // staffing fields locked - they were authorised by the HR Manager as
+        // part of that requisition and may only change through the
+        // requisition amendment + re-approval workflow, never a direct edit
+        // here. Publication-only details (description, location, deadline,
+        // workMode, tags, benefits, ...) remain freely editable.
+        if (job.sourceRequisition) {
+            const lockedFieldsTouched = REQUISITION_LOCKED_FIELDS.filter(field => updates[field] !== undefined);
+            if (lockedFieldsTouched.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${lockedFieldsTouched.join(', ')} came from an approved Job Requisition and cannot be `
+                        + 'edited directly. Ask HR to amend the requisition and have it re-approved instead.'
+                });
+            }
+        }
 
         Object.assign(job, updates);
 
@@ -312,6 +428,15 @@ exports.submitJob = async (req, res) => {
         recordStatus(job, 'pending_approval', req.user.id, 'Submitted for HR Manager approval');
         await job.save();
 
+        await notificationService.notifyRoles({
+            employer: job.employer,
+            roles: ['hr_manager'],
+            type: 'vacancy_pending_approval',
+            title: 'Vacancy awaiting approval',
+            message: `"${job.title}" was submitted for approval.`,
+            link: '/hr-manager/vacancy-approvals'
+        });
+
         res.status(200).json({
             success: true,
             message: 'Vacancy submitted for HR Manager approval',
@@ -338,6 +463,18 @@ exports.deleteJob = async (req, res) => {
             return res.status(403).json({
                 success: false,
                 message: 'Only the HR Expert who created this vacancy can delete it'
+            });
+        }
+
+        // Deleting is only for work that never left the HR Expert's hands. Once
+        // a vacancy has been submitted it is part of the organization's
+        // recruitment record - the HR Manager has seen it, or candidates have -
+        // and removing it would erase an approval trail rather than end a
+        // recruitment. Published vacancies are closed, never deleted.
+        if (!EDITABLE_STATUSES.includes(job.status)) {
+            return res.status(400).json({
+                success: false,
+                message: `A vacancy with status "${job.status}" cannot be deleted. ${reworkHint(job.status)}`
             });
         }
 
@@ -536,6 +673,36 @@ exports.approveJob = async (req, res) => {
         recordStatus(job, 'published', req.user.id, req.body.note || 'Approved and published');
         await job.save();
 
+        const notifyTarget = job.submittedBy || job.hr_expert;
+        if (notifyTarget) {
+            await notificationService.notify({
+                user: notifyTarget,
+                employer: job.employer,
+                type: 'job_approved',
+                title: 'Vacancy approved',
+                message: `"${job.title}" was approved and is now published.`,
+                link: '/hr-expert/vacancies'
+            });
+        }
+
+        // The department that asked for this headcount should learn that
+        // recruitment has actually started, without having to poll HR. Reached
+        // through the source requisition, so only the requester of THIS
+        // vacancy is told.
+        if (job.sourceRequisition) {
+            const requisition = await JobRequisition.findById(job.sourceRequisition).select('requestedBy departmentName');
+            if (requisition && String(requisition.requestedBy) !== String(notifyTarget)) {
+                await notificationService.notify({
+                    user: requisition.requestedBy,
+                    employer: job.employer,
+                    type: 'job_approved',
+                    title: 'Your vacancy is now published',
+                    message: `"${job.title}" was approved and published. Candidates can now apply.`,
+                    link: await notificationService.linkForUser(requisition.requestedBy, 'requisitions')
+                });
+            }
+        }
+
         res.status(200).json({ success: true, message: 'Vacancy approved and published', job });
     } catch (error) {
         console.error(error);
@@ -583,6 +750,18 @@ exports.rejectJob = async (req, res) => {
         job.rejectionReason = reason.trim();
         recordStatus(job, 'rejected', req.user.id, reason.trim());
         await job.save();
+
+        const notifyTarget = job.submittedBy || job.hr_expert;
+        if (notifyTarget) {
+            await notificationService.notify({
+                user: notifyTarget,
+                employer: job.employer,
+                type: 'job_rejected',
+                title: 'Vacancy needs changes',
+                message: `"${job.title}" was returned with feedback: ${reason.trim()}`,
+                link: '/hr-expert/vacancies'
+            });
+        }
 
         res.status(200).json({ success: true, message: 'Vacancy returned to the HR Expert with feedback', job });
     } catch (error) {

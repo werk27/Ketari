@@ -41,11 +41,23 @@ import TrainingManagement from './components/hr/TrainingManagement';
 import ComplaintsManagement from './components/hr/ComplaintsManagement';
 import DelegationManagement from './components/hr/DelegationManagement';
 import ConfigurationManager from './components/hr/ConfigurationManager';
+import JobRequisitions from './components/hr/JobRequisitions';
+import RequisitionForm from './components/hr/RequisitionForm';
+import RequisitionReview from './components/hr/RequisitionReview';
+import RecruitmentReport from './components/hr/RecruitmentReport';
 
 // Employee self-service
 import EmployeeDashboard from './components/employee/EmployeeDashboard';
 import EmployeeOnboarding from './components/employee/EmployeeOnboarding';
 import OnboardingQueue from './components/hr/OnboardingQueue';
+
+// Department Head - an employee who additionally heads a department. Reuses the
+// existing Job Requisition, Employee and Configuration modules; these screens
+// are read-only department views on top of them.
+import DepartmentDashboard from './components/department/DepartmentDashboard';
+import MyDepartment from './components/department/MyDepartment';
+import DepartmentEmployees from './components/department/DepartmentEmployees';
+import RecruitmentStatus from './components/department/RecruitmentStatus';
 
 // Employer / platform
 import EmployerDashboard from './components/employer/EmployerDashboard';
@@ -131,17 +143,24 @@ function AppContent() {
                         <Route path="job-creator" element={<PostJob />} />
                         <Route path="vacancies" element={<VacancyList />} />
                         <Route path="vacancies/:id/edit" element={<EditJob />} />
+                        <Route path="requisitions" element={<JobRequisitions />} />
+                        <Route path="requisitions/new" element={<RequisitionForm />} />
+                        <Route path="requisitions/:id" element={<RequisitionReview />} />
+                        <Route path="requisitions/:id/edit" element={<RequisitionForm />} />
                         <Route path="applications" element={<ApplicationsHub />} />
                         <Route path="applications/:jobId" element={<Applications />} />
                         <Route path="candidates" element={<CandidateList />} />
                         <Route path="ai-matching" element={<AIMatching />} />
                         <Route path="ai-matching/:jobId" element={<AIMatching />} />
+                        <Route path="reports" element={<RecruitmentReport />} />
+                        <Route path="reports/:jobId" element={<RecruitmentReport />} />
                         <Route path="employees" element={<EmployeeDirectory />} />
                         <Route path="onboarding" element={<OnboardingQueue />} />
                         <Route path="leave" element={<LeaveManagement />} />
                         <Route path="requests" element={<RequestManagement />} />
                         <Route path="training" element={<TrainingManagement />} />
                         <Route path="complaints" element={<ComplaintsManagement />} />
+                        <Route path="delegation" element={<DelegationManagement />} />
                         <Route path="my-hr" element={<EmployeeDashboard />} />
                     </Route>
 
@@ -157,6 +176,8 @@ function AppContent() {
                         <Route path="vacancy-approvals/:id" element={<VacancyReview />} />
                         <Route path="shortlists" element={<ShortlistReview />} />
                         <Route path="vacancies" element={<VacancyList />} />
+                        <Route path="requisitions" element={<JobRequisitions />} />
+                        <Route path="requisitions/:id" element={<RequisitionReview />} />
                         <Route path="applications" element={<ApplicationsHub />} />
                         <Route path="applications/:jobId" element={<Applications />} />
                         <Route path="candidates" element={<CandidateList />} />
@@ -167,6 +188,8 @@ function AppContent() {
                         <Route path="training" element={<TrainingManagement />} />
                         <Route path="complaints" element={<ComplaintsManagement />} />
                         <Route path="delegation" element={<DelegationManagement />} />
+                        <Route path="reports" element={<RecruitmentReport />} />
+                        <Route path="reports/:jobId" element={<RecruitmentReport />} />
                         <Route path="my-hr" element={<EmployeeDashboard />} />
                     </Route>
 
@@ -187,7 +210,12 @@ function AppContent() {
                         <Route path="requests" element={<RequestManagement />} />
                         <Route path="training" element={<TrainingManagement />} />
                         <Route path="complaints" element={<ComplaintsManagement />} />
+                        <Route path="delegation" element={<DelegationManagement />} />
                         <Route path="vacancies" element={<VacancyList />} />
+                        <Route path="requisitions" element={<JobRequisitions />} />
+                        <Route path="requisitions/new" element={<RequisitionForm />} />
+                        <Route path="requisitions/:id" element={<RequisitionReview />} />
+                        <Route path="requisitions/:id/edit" element={<RequisitionForm />} />
                         <Route path="applications" element={<ApplicationsHub />} />
                     </Route>
 
@@ -202,6 +230,22 @@ function AppContent() {
                         <Route path="onboarding" element={<EmployeeOnboarding />} />
                         <Route path="profile" element={<Profile />} />
                         <Route path="complaints" element={<Complaints />} />
+                        <Route path="delegation" element={<DelegationManagement />} />
+                        {/* Job Requisitions: reachable by any employee account, but only
+                            an employee assigned as a Department's Head can actually raise
+                            one - see requisitionController.createRequisition. */}
+                        <Route path="requisitions" element={<JobRequisitions />} />
+                        <Route path="requisitions/new" element={<RequisitionForm />} />
+                        <Route path="requisitions/:id" element={<RequisitionReview />} />
+                        <Route path="requisitions/:id/edit" element={<RequisitionForm />} />
+
+                        {/* Department Head views. Guarded server-side by
+                            withDepartmentHeadScope, which refuses anyone who heads no
+                            department, so these routes reveal nothing on their own. */}
+                        <Route path="department" element={<DepartmentDashboard />} />
+                        <Route path="department/profile" element={<MyDepartment />} />
+                        <Route path="department/employees" element={<DepartmentEmployees />} />
+                        <Route path="recruitment" element={<RecruitmentStatus />} />
                     </Route>
 
                     {/* ============================================

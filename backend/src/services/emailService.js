@@ -231,3 +231,40 @@ exports.sendPasswordResetEmail = async (userEmail, userName, resetUrl) => {
     };
     return deliver(mailOptions, 'legacy');
 };
+
+/** Tell an organization's owner the outcome of a System Administrator verification review. */
+exports.sendEmployerVerificationResult = async ({ to, name, organizationName, status, reason }) => {
+    const outcomes = {
+        active: {
+            subject: `${organizationName} is now verified`,
+            heading: 'Organization verified ✅',
+            body: `<p>Congratulations - <strong>${organizationName}</strong> has been verified and is now active.
+                   You can publish vacancies and invite HR staff.</p>`
+        },
+        rejected: {
+            subject: `${organizationName} verification was not approved`,
+            heading: 'Verification not approved',
+            body: `<p><strong>${organizationName}</strong>'s verification application was not approved.</p>
+                   ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
+                   <p>You may correct the noted issues and resubmit.</p>`
+        },
+        suspended: {
+            subject: `${organizationName} has been suspended`,
+            heading: 'Organization suspended',
+            body: `<p><strong>${organizationName}</strong> has been suspended.</p>
+                   ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}`
+        }
+    };
+    const outcome = outcomes[status];
+    if (!outcome) return { sent: false, reason: 'unsupported_status' };
+
+    return deliver({
+        to,
+        subject: outcome.subject,
+        html: shell(outcome.heading, `
+            <p>Dear <strong>${name}</strong>,</p>
+            ${outcome.body}
+            <p><a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/employer/verification" style="color:#2c3e8f;">View your organization →</a></p>
+        `)
+    }, 'employer verification result');
+};

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Modal, Form, Badge } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { FaBuilding, FaCheck, FaTimes, FaFileAlt, FaExclamationTriangle } from 'react-icons/fa';
-import api from '../../services/api';
+import api, { openAuthenticatedFile, describeApiError } from '../../services/api';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -221,14 +221,18 @@ const AdminEmployers = () => {
                             ) : (
                                 <div className="d-flex flex-column gap-1 mb-3">
                                     {dossier.employer.verificationDocuments.map(doc => (
-                                        <a key={doc._id} className="d-flex align-items-center gap-2 text-decoration-none"
-                                           style={{ fontSize: '0.8rem' }}
-                                           href={`${api.defaults.baseURL}/employers/${dossier.employer._id}/documents/${doc._id}`}
-                                           target="_blank" rel="noreferrer">
+                                        <Button
+                                            key={doc._id}
+                                            variant="link"
+                                            className="d-flex align-items-center gap-2 text-decoration-none p-0"
+                                            style={{ fontSize: '0.8rem' }}
+                                            onClick={() => openAuthenticatedFile(`/employers/${dossier.employer._id}/documents/${doc._id}`)
+                                                .catch(err => toast.error(describeApiError(err, 'Could not open this document')))}
+                                        >
                                             <FaFileAlt className="text-primary" />
                                             {doc.label}
                                             <Badge bg="light" text="dark">{doc.originalName}</Badge>
-                                        </a>
+                                        </Button>
                                     ))}
                                 </div>
                             )}

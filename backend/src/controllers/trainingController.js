@@ -1,5 +1,6 @@
 const Training = require('../models/Training');
 const Employee = require('../models/Employee');
+const notificationService = require('../services/notificationService');
 
 /**
  * Training management.
@@ -39,6 +40,15 @@ exports.createTraining = async (req, res) => {
             proposedBy: req.user.id,
             // A new programme always starts as a proposal awaiting manager approval.
             status: 'proposed'
+        });
+
+        await notificationService.notifyRoles({
+            employer: req.employerId,
+            roles: ['hr_manager'],
+            type: 'training_assigned',
+            title: 'Training proposal awaiting approval',
+            message: `"${training.title}" needs your approval.`,
+            link: '/hr-manager/training'
         });
 
         res.status(201).json({ success: true, data: training });
@@ -149,6 +159,19 @@ exports.decideTraining = async (req, res) => {
         training.approvedAt = new Date();
         training.decisionReason = reason || '';
         await training.save();
+
+        if (training.proposedBy) {
+            await notificationService.notify({
+                user: training.proposedBy,
+                employer: training.employer,
+                type: 'training_decision',
+                title: outcome === 'approved' ? 'Training approved' : 'Training rejected',
+                message: outcome === 'approved'
+                    ? `"${training.title}" was approved and can now be opened for registration.`
+                    : `"${training.title}" was rejected.${reason ? ` Reason: ${reason}` : ''}`,
+                link: '/hr-expert/training'
+            });
+        }
 
         res.status(200).json({ success: true, message: `Training ${outcome}`, data: training });
     } catch (error) {

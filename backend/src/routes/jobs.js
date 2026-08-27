@@ -28,10 +28,24 @@ router.post('/', [
     can(CAPABILITIES.VACANCY_CREATE),
     withEmployerScope,
     requireActiveEmployer,
-    body('title').notEmpty().withMessage('Job title is required'),
-    body('department').notEmpty().withMessage('Department is required'),
+    // When creating from an approved Job Requisition, its essential fields
+    // (title, department, salary, ...) are pre-filled by the controller from
+    // the requisition itself, so the request body legitimately omits them.
+    body('title').if((v, { req }) => !req.body.requisitionId).notEmpty().withMessage('Job title is required'),
+    body('department').if((v, { req }) => !req.body.requisitionId).notEmpty().withMessage('Department is required'),
     body('description').notEmpty().withMessage('Job description is required'),
-    body('location').notEmpty().withMessage('Location is required')
+    body('location').notEmpty().withMessage('Location is required'),
+    // One fixed, required amount - never a range and never "negotiable".
+    // Legacy salary.min / salary.max are rejected outright rather than
+    // silently accepted and ignored, so an old client cannot post a range
+    // that looks accepted but was never actually stored.
+    body('salary.amount')
+        .if((v, { req }) => !req.body.requisitionId)
+        .notEmpty().withMessage('Salary is required')
+        .bail()
+        .isFloat({ gt: 0 }).withMessage('Salary must be a positive numeric amount'),
+    body('salary.min').not().exists().withMessage('Salary ranges are not supported; provide a single salary.amount'),
+    body('salary.max').not().exists().withMessage('Salary ranges are not supported; provide a single salary.amount')
 ], createJob);
 
 // @route   GET /api/jobs
@@ -93,12 +107,25 @@ router.put('/:id/reject', protect, can(CAPABILITIES.VACANCY_REJECT), withEmploye
 router.put('/:id/close', protect, can(CAPABILITIES.VACANCY_APPROVE), withEmployerScope, closeJob);
 
 // @route   PUT /api/jobs/:id
-// @desc    Update vacancy
+// @desc    Update a vacancy (draft or returned only - a submitted vacancy is locked
+//          while the HR Manager reviews it)
 // @access  Private (HR Expert who owns it)
-router.put('/:id', protect, can(CAPABILITIES.VACANCY_EDIT), withEmployerScope, updateJob);
+router.put('/:id', [
+    protect,
+    can(CAPABILITIES.VACANCY_EDIT),
+    withEmployerScope,
+    // Optional on update (an edit may not touch salary at all), but if
+    // provided it follows the same fixed-amount rule as creation.
+    body('salary.amount')
+        .optional()
+        .isFloat({ gt: 0 }).withMessage('Salary must be a positive numeric amount'),
+    body('salary.min').not().exists().withMessage('Salary ranges are not supported; provide a single salary.amount'),
+    body('salary.max').not().exists().withMessage('Salary ranges are not supported; provide a single salary.amount')
+], updateJob);
 
 // @route   DELETE /api/jobs/:id
-// @desc    Delete vacancy
+// @desc    Delete a vacancy (draft or returned only - submitted/published vacancies
+//          are part of the recruitment record and are closed, never deleted)
 // @access  Private (HR Expert who owns it)
 router.delete('/:id', protect, can(CAPABILITIES.VACANCY_DELETE), withEmployerScope, deleteJob);
 

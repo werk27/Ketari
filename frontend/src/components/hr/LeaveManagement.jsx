@@ -116,6 +116,7 @@ const LeaveManagement = () => {
                                     <th className="fw-semibold">Type</th>
                                     <th className="fw-semibold">Period</th>
                                     <th className="fw-semibold text-center">Days</th>
+                                    <th className="fw-semibold">Reason</th>
                                     <th className="fw-semibold">Status</th>
                                     <th className="fw-semibold text-end">Actions</th>
                                 </tr>
@@ -143,6 +144,20 @@ const LeaveManagement = () => {
                                             </td>
                                             <td className="text-center fw-semibold" style={{ fontSize: '0.85rem' }}>
                                                 {leave.totalDays}
+                                                {leave.payBreakdown && (
+                                                    <div className="text-muted fw-normal" style={{ fontSize: '0.68rem' }}>
+                                                        {[
+                                                            leave.payBreakdown.fullPayDays ? `${leave.payBreakdown.fullPayDays} full-pay` : null,
+                                                            leave.payBreakdown.halfPayDays ? `${leave.payBreakdown.halfPayDays} half-pay` : null,
+                                                            leave.payBreakdown.unpaidDays ? `${leave.payBreakdown.unpaidDays} unpaid` : null
+                                                        ].filter(Boolean).join(', ')}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="text-muted" style={{ fontSize: '0.8rem', maxWidth: 220 }}>
+                                                <div className="text-truncate" title={leave.reason || ''}>
+                                                    {leave.reason || '—'}
+                                                </div>
                                             </td>
                                             <td>
                                                 <StatusBadge status={leave.status} />

@@ -6,19 +6,21 @@ const {
     uploadResume, 
     getResumes, 
     setDefaultResume, 
-    deleteResume 
+    deleteResume,
+    viewResumeFile
 } = require('../controllers/resumeController');
 const { protect, can } = require('../middleware/auth');
 const { CAPABILITIES } = require('../config/permissions');
-const { UPLOAD_PATHS } = require('../config/paths');
+const { PRIVATE_PATHS } = require('../config/paths');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
     destination: function(req, file, cb) {
-        // Absolute path: the previous 'uploads/' was relative to the process
-        // working directory, so resumes landed in different folders depending
-        // on where the server was started from.
-        cb(null, UPLOAD_PATHS.resumes);
+        // A CV identifies a real person, so it is written under the private,
+        // non-statically-served root rather than uploads/ - see
+        // resumeController.viewResumeFile for how it is read back out under
+        // authorization instead of a plain public URL.
+        cb(null, PRIVATE_PATHS.resumes);
     },
     filename: function(req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -64,5 +66,13 @@ router.put('/:id/default', protect, can(CAPABILITIES.JOB_SEEK_PROFILE), setDefau
 // @desc    Delete resume
 // @access  Private (candidate or employee)
 router.delete('/:id', protect, can(CAPABILITIES.JOB_SEEK_PROFILE), deleteResume);
+
+// @route   GET /api/resumes/:id/file
+// @desc    Stream the CV itself (the actual file, not just parsed data)
+// @access  Private (the owning candidate, or an HR user from an organization
+//          the candidate applied to / was hired by - checked in the controller
+//          since it depends on the Application/Employee relationship rather
+//          than a simple role check)
+router.get('/:id/file', protect, viewResumeFile);
 
 module.exports = router;

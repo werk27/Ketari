@@ -1,11 +1,20 @@
 const Employee = require('../models/Employee');
 const User = require('../models/User');
+const { EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
+const auditService = require('../services/auditService');
+const notificationService = require('../services/notificationService');
 
 /**
  * Employee Information module.
  *
  * Every record belongs to exactly one organization (req.employerId), so one
  * employer can never read or modify another employer's staff data.
+ *
+ * Employee / User account / organizational role are kept as three distinct
+ * concepts (see createEmployeeAccount, linkEmployeeAccount, assignEmployeeRole
+ * below): an Employee record can exist with no login access at all, and a
+ * role such as hr_expert or hr_manager is only ever granted to the User
+ * account already linked to an existing Employee - never created on its own.
  */
 
 /** Generate the next employee number within an organization. */
@@ -26,7 +35,7 @@ const nextEmployeeId = async (employerId) => {
 /** Load an employee and confirm the caller's organization owns it. */
 const findScopedEmployee = async (employeeId, req) => {
     const employee = await Employee.findById(employeeId)
-        .populate('user', 'name email role')
+        .populate('user', 'name email role status')
         .populate('employmentInfo.supervisor', 'name email');
 
     if (!employee) return { error: { code: 404, message: 'Employee not found' } };
@@ -167,6 +176,8 @@ exports.getEmployees = async (req, res) => {
 
         if (req.query.status) query.status = req.query.status;
         if (req.query.department) query['employmentInfo.department'] = req.query.department;
+        if (req.query.position) query['employmentInfo.position'] = req.query.position;
+        if (req.query.employmentStatus) query['employmentInfo.employmentStatus'] = req.query.employmentStatus;
 
         if (req.query.search) {
             const term = new RegExp(req.query.search, 'i');
@@ -179,7 +190,7 @@ exports.getEmployees = async (req, res) => {
         }
 
         const employees = await Employee.find(query)
-            .populate('user', 'name email role')
+            .populate('user', 'name email role status')
             .sort({ createdAt: -1 });
 
         res.status(200).json({
@@ -218,7 +229,7 @@ exports.getMyEmployeeRecord = async (req, res) => {
 exports.getEmployee = async (req, res) => {
     try {
         const employee = await Employee.findById(req.params.id)
-            .populate('user', 'name email role')
+            .populate('user', 'name email role status')
             .populate('employmentInfo.supervisor', 'name email');
 
         if (!employee) {
@@ -353,6 +364,326 @@ exports.getEmployeeStatistics = async (req, res) => {
         });
     } catch (error) {
         console.error('Employee Statistics Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Employee <-> User account <-> Organizational role
+//
+// These three are kept as separate concepts throughout this module:
+//   - An Employee record can exist with no login access at all.
+//   - A User account, once it exists, is what actually carries a `role`.
+//   - Assigning a role only ever changes the role of an account already
+//     linked to an existing Employee - it is never possible to grant
+//     hr_expert / hr_manager to a freestanding account that bypasses the
+//     Employee Directory.
+// ---------------------------------------------------------------------------
+
+// @desc    Users in this organization with no Employee record pointing at them
+//          yet (candidates for "link existing account", including HR staff
+//          created before this Employee/Account/Role separation existed)
+// @route   GET /api/employees/accounts/unlinked
+// @access  Private (org:team - the employer)
+exports.getUnlinkedAccounts = async (req, res) => {
+    try {
+        const linkedUserIds = await Employee.find({ employer: req.employerId, user: { $ne: null } })
+            .distinct('user');
+
+        const users = await User.find({
+            employer: req.employerId,
+            _id: { $nin: linkedUserIds }
+        }).select('name email role status createdAt').sort({ name: 1 });
+
+        res.status(200).json({ success: true, count: users.length, users });
+    } catch (error) {
+        console.error('Get Unlinked Accounts Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Create a new user account for an existing employee
+// @route   POST /api/employees/:id/account
+// @access  Private (org:team - the employer)
+exports.createEmployeeAccount = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (employee.user) {
+            return res.status(400).json({
+                success: false,
+                message: 'This employee already has a linked user account'
+            });
+        }
+
+        const { email, password, role = 'employee' } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email and password are required'
+            });
+        }
+        if (!EMPLOYER_MANAGEABLE_ROLES.includes(role)) {
+            return res.status(400).json({
+                success: false,
+                message: `Role must be one of: ${EMPLOYER_MANAGEABLE_ROLES.join(', ')}`
+            });
+        }
+
+        const normalizedEmail = email.trim().toLowerCase();
+        const exists = await User.findOne({ email: normalizedEmail });
+        if (exists) {
+            return res.status(400).json({
+                success: false,
+                message: 'A user with this email address already exists'
+            });
+        }
+
+        const fullName = [employee.personalInfo?.firstName, employee.personalInfo?.middleName, employee.personalInfo?.lastName]
+            .filter(Boolean).join(' ');
+
+        const user = await User.create({
+            name: fullName || 'Employee',
+            email: normalizedEmail,
+            password,
+            role,
+            status: 'active',
+            employer: req.employerId
+        });
+
+        employee.user = user._id;
+        employee.employmentHistory.push({
+            type: 'account_change',
+            employmentStatus: employee.employmentInfo?.employmentStatus,
+            effectiveDate: new Date(),
+            note: `User account created (${role})`,
+            recordedBy: req.user.id
+        });
+        await employee.save();
+
+        await auditService.record(req, {
+            action: 'employee.account_created',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: `Account created for ${fullName} (${normalizedEmail})`,
+            to: role
+        });
+
+        res.status(201).json({
+            success: true,
+            message: 'Account created and linked to the employee',
+            data: { id: user._id, name: user.name, email: user.email, role: user.role, status: user.status }
+        });
+    } catch (error) {
+        console.error('Create Employee Account Error:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation Error',
+                errors: Object.values(error.errors).map(err => err.message)
+            });
+        }
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Link an existing (unlinked) user account in this organization to an employee
+// @route   PUT /api/employees/:id/account/link
+// @access  Private (org:team - the employer)
+exports.linkEmployeeAccount = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (employee.user) {
+            return res.status(400).json({
+                success: false,
+                message: 'This employee already has a linked user account'
+            });
+        }
+
+        const { userId } = req.body;
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'A user account is required' });
+        }
+
+        const account = await User.findById(userId);
+        if (!account || !account.employer || account.employer.toString() !== req.employerId.toString()) {
+            return res.status(404).json({
+                success: false,
+                message: 'That user account does not belong to your organization'
+            });
+        }
+
+        const alreadyLinked = await Employee.exists({ user: account._id });
+        if (alreadyLinked) {
+            return res.status(400).json({
+                success: false,
+                message: 'That account is already linked to a different employee record'
+            });
+        }
+
+        employee.user = account._id;
+        employee.employmentHistory.push({
+            type: 'account_change',
+            employmentStatus: employee.employmentInfo?.employmentStatus,
+            effectiveDate: new Date(),
+            note: `Linked to existing account ${account.email}`,
+            recordedBy: req.user.id
+        });
+        await employee.save();
+
+        await auditService.record(req, {
+            action: 'employee.account_linked',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: `Linked existing account ${account.email}`
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'Account linked to the employee',
+            data: { id: account._id, name: account.name, email: account.email, role: account.role, status: account.status }
+        });
+    } catch (error) {
+        console.error('Link Employee Account Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Activate or deactivate the employee's linked user account
+// @route   PUT /api/employees/:id/account/status
+// @access  Private (org:team - the employer)
+exports.setEmployeeAccountStatus = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (!employee.user) {
+            return res.status(400).json({
+                success: false,
+                message: 'This employee has no linked user account yet'
+            });
+        }
+
+        const { status } = req.body;
+        if (!['active', 'inactive'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Status must be active or inactive' });
+        }
+
+        const account = await User.findById(employee.user._id || employee.user);
+        if (!account) {
+            return res.status(404).json({ success: false, message: 'Linked user account no longer exists' });
+        }
+        if (account._id.toString() === req.user.id) {
+            return res.status(400).json({ success: false, message: 'You cannot change your own account status here' });
+        }
+
+        account.status = status;
+        await account.save();
+
+        res.status(200).json({
+            success: true,
+            message: `Account ${status === 'active' ? 'activated' : 'deactivated'}`,
+            data: { id: account._id, name: account.name, email: account.email, role: account.role, status: account.status }
+        });
+    } catch (error) {
+        console.error('Set Employee Account Status Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Assign an organizational role to an employee's linked account
+// @route   PUT /api/employees/:id/role
+// @access  Private (org:team - the employer)
+//
+// Validation order follows the business rule directly: the employee must
+// already exist and belong to this organization (findScopedEmployee), a role
+// can only ever be granted to the account already linked to that employee
+// (never created independently of it), the role itself must be one this
+// organization is allowed to grant, and assigning the role the account
+// already has is refused rather than silently repeated.
+exports.assignEmployeeRole = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (!employee.user) {
+            return res.status(400).json({
+                success: false,
+                message: 'Create or link a user account for this employee before assigning a role'
+            });
+        }
+
+        const { role } = req.body;
+        if (!EMPLOYER_MANAGEABLE_ROLES.includes(role)) {
+            return res.status(400).json({
+                success: false,
+                message: `Role must be one of: ${EMPLOYER_MANAGEABLE_ROLES.join(', ')}`
+            });
+        }
+
+        const account = await User.findById(employee.user._id || employee.user);
+        if (!account || !account.employer || account.employer.toString() !== req.employerId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: 'This account no longer belongs to your organization'
+            });
+        }
+
+        if (account.role === role) {
+            return res.status(400).json({
+                success: false,
+                message: `This employee already has the ${role} role`
+            });
+        }
+
+        const previousRole = account.role;
+        account.role = role;
+        await account.save();
+
+        employee.employmentHistory.push({
+            type: 'role_change',
+            employmentStatus: employee.employmentInfo?.employmentStatus,
+            effectiveDate: new Date(),
+            note: `Role changed from ${previousRole} to ${role}`,
+            recordedBy: req.user.id
+        });
+        await employee.save();
+
+        await auditService.record(req, {
+            action: 'employee.role_assigned',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: `Role changed for ${account.email}`,
+            from: previousRole,
+            to: role
+        });
+
+        await notificationService.notify({
+            user: account._id,
+            employer: req.employerId,
+            type: 'account_update',
+            title: 'Your role has changed',
+            message: `Your organizational role is now ${role.replace('_', ' ')}.`
+        });
+
+        res.status(200).json({
+            success: true,
+            message: `Role assigned: ${role}`,
+            data: { id: account._id, name: account.name, email: account.email, role: account.role, status: account.status }
+        });
+    } catch (error) {
+        console.error('Assign Employee Role Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };

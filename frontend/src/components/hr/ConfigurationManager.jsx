@@ -1,31 +1,37 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Form, Nav } from 'react-bootstrap';
+import { Button, Form, Nav, Table } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaPlus, FaTrash, FaSlidersH, FaInfoCircle } from 'react-icons/fa';
+import { FaPlus, FaTrash, FaEdit, FaInfoCircle, FaTimes, FaPowerOff } from 'react-icons/fa';
 import api from '../../services/api';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
 
 /**
- * Configuration module (spec §19 / §20).
+ * Configuration module (spec §19 / §20), redesigned around the organization's
+ * actual structure:
  *
- * Organizational lookup data is CONFIGURABLE. Personal attributes (religion,
- * marital status, blood type) are kept as selectable option lists for employee
- * profiles only - they are never recruitment criteria, so they are grouped
- * separately and clearly labelled.
+ *   Organization -> Departments -> Positions -> Position Ranks (+ salary band)
+ *
+ * Departments are the foundation. A Position always belongs to one of the
+ * organization's own configured Departments (picked from a dropdown - never
+ * free text, which used to fail with an opaque "Invalid"/"Validation Error").
+ * Position Ranks are global and reusable across positions (e.g. "Senior"
+ * applies to many roles), matching the pre-existing schema, and optionally
+ * carry a salary band. Job Titles and Partners remain their own standalone
+ * lists - nothing else in the system currently ties a Job Title to a
+ * Department, so that relationship is not invented here.
+ *
+ * Skills, Languages, Leave Types etc. have no such relationships and keep the
+ * original simple "name + one detail field" list editor.
  */
 const GROUPS = [
     {
         key: 'organization',
         label: 'Organization',
-        lists: [
-            { type: 'departments', label: 'Departments', fields: ['name', 'code'] },
-            { type: 'positions', label: 'Positions', fields: ['title', 'department'], nameField: 'title' },
-            { type: 'position-ranks', label: 'Position Ranks', fields: ['name', 'level'] },
-            { type: 'job-titles', label: 'Job Titles', fields: ['name'] },
-            { type: 'partners', label: 'Partners', fields: ['name', 'type'] }
-        ]
+        description: 'Departments are the foundation of your organization structure. Positions belong to a '
+            + 'Department; Position Ranks are reusable across every position. Job Titles and Partners are separate lists.',
+        custom: true
     },
     {
         key: 'professional',
@@ -74,6 +80,428 @@ const FIELD_BY_TYPE = {
     'religions': 'religions', 'marital-status': 'maritalStatus', 'blood-types': 'bloodTypes'
 };
 
+const STATUS_OPTIONS = [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' }
+];
+
+/**
+ * A full Create / List / Edit / Activate-Deactivate / Delete manager for one
+ * organization-structure entity (Department, Position, Position Rank, Job
+ * Title or Partner). The form fields themselves and the table columns are the
+ * only things that differ between entities - everything else (load state,
+ * add vs. update, specific-error surfacing, delete confirmation) is shared.
+ */
+const EntityManager = ({
+    type, field, label, labelPlural,
+    emptyForm, toFormValues, buildPayload,
+    renderFields, columns, items
+}) => {
+    const [form, setForm] = useState(emptyForm);
+    const [editingId, setEditingId] = useState(null);
+    const [busy, setBusy] = useState(false);
+
+    const setField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+
+    const startEdit = (item) => {
+        setEditingId(item._id);
+        setForm(toFormValues(item));
+    };
+
+    const cancelEdit = () => {
+        setEditingId(null);
+        setForm(emptyForm);
+    };
+
+    const submit = async () => {
+        setBusy(true);
+        try {
+            const payload = buildPayload(form);
+            if (editingId) {
+                await api.put(`/config/${type}/${editingId}`, payload);
+                toast.success(`${label} updated`);
+            } else {
+                await api.post(`/config/${type}`, payload);
+                toast.success(`${label} added`);
+            }
+            cancelEdit();
+            items.onChanged();
+        } catch (err) {
+            // Surface the SPECIFIC reason the backend returned - never a generic "Invalid".
+            toast.error(err.response?.data?.message || `Could not save this ${label.toLowerCase()}`);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const toggleStatus = async (item) => {
+        setBusy(true);
+        try {
+            const nextStatus = item.status === 'active' ? 'inactive' : 'active';
+            const payload = { ...buildPayload(toFormValues(item)), status: nextStatus };
+            await api.put(`/config/${type}/${item._id}`, payload);
+            toast.success(nextStatus === 'active' ? `${label} activated` : `${label} deactivated`);
+            items.onChanged();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not update the status');
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const remove = async (item) => {
+        setBusy(true);
+        try {
+            await api.delete(`/config/${type}/${item._id}`);
+            toast.success(`${label} removed`);
+            items.onChanged();
+        } catch (err) {
+            // A 409 here always carries the specific reason it's still in use
+            // (e.g. "assigned to one or more employees") - never a silent failure.
+            toast.error(err.response?.data?.message || `Could not remove this ${label.toLowerCase()}`);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const list = items.list;
+
+    return (
+        <Card className="p-3 h-100">
+            <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="fw-semibold text-dark" style={{ fontSize: '0.9rem' }}>{labelPlural}</div>
+                <span className="text-muted" style={{ fontSize: '0.75rem' }}>{list.length} item(s)</span>
+            </div>
+
+            <div className="p-2 rounded mb-3" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                {renderFields({ form, setField })}
+                <div className="d-flex gap-2 mt-1">
+                    <Button size="sm" disabled={busy} onClick={submit} className="d-flex align-items-center gap-2">
+                        <FaPlus size={11} /> {editingId ? `Update ${label}` : `Add ${label}`}
+                    </Button>
+                    {editingId && (
+                        <Button size="sm" variant="outline-secondary" disabled={busy} onClick={cancelEdit}
+                                className="d-flex align-items-center gap-2">
+                            <FaTimes size={11} /> Cancel
+                        </Button>
+                    )}
+                </div>
+            </div>
+
+            {list.length === 0 ? (
+                <EmptyState title="Nothing configured yet" description={`Add your first ${label.toLowerCase()}.`} />
+            ) : (
+                <div className="table-responsive">
+                    <Table size="sm" className="align-middle mb-0">
+                        <thead>
+                            <tr style={{ fontSize: '0.68rem', color: '#64748B', textTransform: 'uppercase' }}>
+                                {columns.map(col => <th key={col.header} className="fw-semibold">{col.header}</th>)}
+                                <th className="fw-semibold text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {list.map(item => (
+                                <tr key={item._id}>
+                                    {columns.map(col => (
+                                        <td key={col.header} style={{ fontSize: '0.8rem' }}>{col.render(item)}</td>
+                                    ))}
+                                    <td className="text-end">
+                                        <div className="d-flex gap-1 justify-content-end">
+                                            <Button size="sm" variant="outline-secondary" disabled={busy}
+                                                    onClick={() => startEdit(item)} title="Edit">
+                                                <FaEdit size={10} />
+                                            </Button>
+                                            <Button size="sm" variant="outline-secondary" disabled={busy}
+                                                    onClick={() => toggleStatus(item)}
+                                                    title={item.status === 'active' ? 'Deactivate' : 'Activate'}>
+                                                <FaPowerOff size={10} />
+                                            </Button>
+                                            <Button size="sm" variant="outline-danger" disabled={busy}
+                                                    onClick={() => remove(item)} title="Delete">
+                                                <FaTrash size={10} />
+                                            </Button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </Table>
+                </div>
+            )}
+        </Card>
+    );
+};
+
+const OrganizationStructure = ({ config, meta, onChanged }) => {
+    const departments = config?.departments || [];
+    const positions = config?.positions || [];
+    const positionRanks = config?.positionRanks || [];
+    const jobTitles = config?.jobTitles || [];
+    const partners = config?.partners || [];
+    const partnerTypes = meta?.partnerTypes || [];
+
+    // Department Head candidates: employees with a linked, active user
+    // account. Loaded once here (Employer-only screen) rather than inside
+    // EntityManager, since only the Department card needs it.
+    const [employees, setEmployees] = useState([]);
+    useEffect(() => {
+        api.get('/employees').then(res => setEmployees(res.data.data || [])).catch(() => setEmployees([]));
+    }, []);
+    const headCandidates = employees.filter(e => e.user && e.user.status === 'active');
+
+    const departmentName = (id) => {
+        if (!id) return '—';
+        return departments.find(d => d._id === (id._id || id))?.name || '—';
+    };
+    const rankName = (id) => {
+        if (!id) return '—';
+        return positionRanks.find(r => r._id === (id._id || id))?.name || '—';
+    };
+    const partnerTypeLabel = (value) => partnerTypes.find(t => t.value === value)?.label || value;
+    const headName = (id) => {
+        if (!id) return null;
+        const rawId = id._id || id;
+        const employee = employees.find(e => e.user && (e.user._id === rawId || e.user === rawId));
+        return employee ? [employee.personalInfo?.firstName, employee.personalInfo?.lastName].filter(Boolean).join(' ') : null;
+    };
+
+    return (
+        <div className="row g-3">
+            <div className="col-12 col-lg-6">
+                <EntityManager
+                    type="departments" field="departments" label="Department" labelPlural="Departments"
+                    items={{ list: departments, onChanged }}
+                    emptyForm={{ name: '', code: '', manager: '', status: 'active' }}
+                    toFormValues={(item) => ({
+                        name: item.name, code: item.code || '',
+                        manager: item.manager ? String(item.manager) : '', status: item.status || 'active'
+                    })}
+                    buildPayload={(form) => ({
+                        name: form.name.trim(), code: form.code.trim(), manager: form.manager || undefined, status: form.status
+                    })}
+                    renderFields={({ form, setField }) => (
+                        <div className="row g-2">
+                            <div className="col-12 col-md-5">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Department Name</Form.Label>
+                                <Form.Control size="sm" value={form.name} onChange={e => setField('name', e.target.value)}
+                                              placeholder="e.g., Information Technology" />
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Code</Form.Label>
+                                <Form.Control size="sm" value={form.code} onChange={e => setField('code', e.target.value)}
+                                              placeholder="e.g., IT" />
+                            </div>
+                            <div className="col-12 col-md-4">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Department Head</Form.Label>
+                                <Form.Select size="sm" value={form.manager} onChange={e => setField('manager', e.target.value)}>
+                                    <option value="">Not assigned</option>
+                                    {headCandidates.map(e => (
+                                        <option key={e.user._id} value={e.user._id}>
+                                            {[e.personalInfo?.firstName, e.personalInfo?.lastName].filter(Boolean).join(' ')}
+                                        </option>
+                                    ))}
+                                </Form.Select>
+                                <Form.Text className="text-muted" style={{ fontSize: '0.7rem' }}>
+                                    May raise Job Requisitions for this department.
+                                </Form.Text>
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </Form.Select>
+                            </div>
+                        </div>
+                    )}
+                    columns={[
+                        { header: 'Name', render: (i) => <span className="fw-semibold text-dark">{i.name}</span> },
+                        { header: 'Code', render: (i) => i.code || '—' },
+                        { header: 'Department Head', render: (i) => headName(i.manager) || '—' },
+                        { header: 'Status', render: (i) => <StatusBadge status={i.status} /> }
+                    ]}
+                />
+            </div>
+
+            <div className="col-12 col-lg-6">
+                <EntityManager
+                    type="positions" field="positions" label="Position" labelPlural="Positions"
+                    items={{ list: positions, onChanged }}
+                    emptyForm={{ title: '', department: '', rank: '', code: '', status: 'active' }}
+                    toFormValues={(item) => ({
+                        title: item.title, department: item.department ? String(item.department) : '',
+                        rank: item.rank ? String(item.rank) : '', code: item.code || '', status: item.status || 'active'
+                    })}
+                    buildPayload={(form) => ({
+                        title: form.title.trim(), department: form.department || undefined,
+                        rank: form.rank || undefined, code: form.code.trim(), status: form.status
+                    })}
+                    renderFields={({ form, setField }) => (
+                        <div className="row g-2">
+                            <div className="col-12 col-md-6">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Position Name</Form.Label>
+                                <Form.Control size="sm" value={form.title} onChange={e => setField('title', e.target.value)}
+                                              placeholder="e.g., Software Developer" />
+                            </div>
+                            <div className="col-12 col-md-6">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Department</Form.Label>
+                                <Form.Select size="sm" value={form.department} onChange={e => setField('department', e.target.value)}>
+                                    <option value="">Select a department…</option>
+                                    {departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                </Form.Select>
+                            </div>
+                            <div className="col-12 col-md-6">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Position Rank</Form.Label>
+                                <Form.Select size="sm" value={form.rank} onChange={e => setField('rank', e.target.value)}>
+                                    <option value="">No rank</option>
+                                    {positionRanks.map(r => <option key={r._id} value={r._id}>{r.name}</option>)}
+                                </Form.Select>
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Code</Form.Label>
+                                <Form.Control size="sm" value={form.code} onChange={e => setField('code', e.target.value)}
+                                              placeholder="e.g., IT-SD" />
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </Form.Select>
+                            </div>
+                        </div>
+                    )}
+                    columns={[
+                        { header: 'Name', render: (i) => <span className="fw-semibold text-dark">{i.title}</span> },
+                        { header: 'Department', render: (i) => departmentName(i.department) },
+                        { header: 'Rank', render: (i) => rankName(i.rank) },
+                        { header: 'Status', render: (i) => <StatusBadge status={i.status} /> }
+                    ]}
+                />
+            </div>
+
+            <div className="col-12 col-lg-6">
+                <EntityManager
+                    type="position-ranks" field="positionRanks" label="Position Rank" labelPlural="Position Ranks"
+                    items={{ list: positionRanks, onChanged }}
+                    emptyForm={{ name: '', level: '', salary: '', status: 'active' }}
+                    toFormValues={(item) => ({
+                        name: item.name, level: item.level ?? '', salary: item.salary ?? '', status: item.status || 'active'
+                    })}
+                    buildPayload={(form) => ({
+                        name: form.name.trim(),
+                        level: form.level === '' ? undefined : form.level,
+                        salary: form.salary === '' ? undefined : form.salary,
+                        status: form.status
+                    })}
+                    renderFields={({ form, setField }) => (
+                        <div className="row g-2">
+                            <div className="col-12 col-md-5">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Rank Name</Form.Label>
+                                <Form.Control size="sm" value={form.name} onChange={e => setField('name', e.target.value)}
+                                              placeholder="e.g., Senior" />
+                            </div>
+                            <div className="col-6 col-md-2">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Level</Form.Label>
+                                <Form.Control size="sm" type="number" value={form.level} onChange={e => setField('level', e.target.value)}
+                                              placeholder="e.g., 3" />
+                            </div>
+                            <div className="col-6 col-md-2">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Salary (ETB)</Form.Label>
+                                <Form.Control size="sm" type="number" min="1" value={form.salary}
+                                              onChange={e => setField('salary', e.target.value)} placeholder="e.g., 30000" />
+                                <Form.Text className="text-muted" style={{ fontSize: '0.7rem' }}>Fixed amount, not a range.</Form.Text>
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </Form.Select>
+                            </div>
+                        </div>
+                    )}
+                    columns={[
+                        { header: 'Name', render: (i) => <span className="fw-semibold text-dark">{i.name}</span> },
+                        { header: 'Level', render: (i) => i.level ?? '—' },
+                        { header: 'Salary (ETB)', render: (i) => i.salary ? i.salary.toLocaleString() : '—' },
+                        { header: 'Status', render: (i) => <StatusBadge status={i.status} /> }
+                    ]}
+                />
+            </div>
+
+            <div className="col-12 col-lg-6">
+                <EntityManager
+                    type="job-titles" field="jobTitles" label="Job Title" labelPlural="Job Titles"
+                    items={{ list: jobTitles, onChanged }}
+                    emptyForm={{ name: '', code: '', status: 'active' }}
+                    toFormValues={(item) => ({ name: item.name, code: item.code || '', status: item.status || 'active' })}
+                    buildPayload={(form) => ({ name: form.name.trim(), code: form.code.trim(), status: form.status })}
+                    renderFields={({ form, setField }) => (
+                        <div className="row g-2">
+                            <div className="col-12 col-md-6">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Job Title</Form.Label>
+                                <Form.Control size="sm" value={form.name} onChange={e => setField('name', e.target.value)}
+                                              placeholder="e.g., Software Engineer" />
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Code</Form.Label>
+                                <Form.Control size="sm" value={form.code} onChange={e => setField('code', e.target.value)}
+                                              placeholder="e.g., SE-001" />
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </Form.Select>
+                            </div>
+                        </div>
+                    )}
+                    columns={[
+                        { header: 'Name', render: (i) => <span className="fw-semibold text-dark">{i.name}</span> },
+                        { header: 'Code', render: (i) => i.code || '—' },
+                        { header: 'Status', render: (i) => <StatusBadge status={i.status} /> }
+                    ]}
+                />
+            </div>
+
+            <div className="col-12 col-lg-6">
+                <EntityManager
+                    type="partners" field="partners" label="Partner" labelPlural="Partners"
+                    items={{ list: partners, onChanged }}
+                    emptyForm={{ name: '', type: '', status: 'active' }}
+                    toFormValues={(item) => ({ name: item.name, type: item.type || '', status: item.status || 'active' })}
+                    buildPayload={(form) => ({ name: form.name.trim(), type: form.type, status: form.status })}
+                    renderFields={({ form, setField }) => (
+                        <div className="row g-2">
+                            <div className="col-12 col-md-6">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Partner Name</Form.Label>
+                                <Form.Control size="sm" value={form.name} onChange={e => setField('name', e.target.value)}
+                                              placeholder="e.g., Acme Staffing" />
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Partner Type</Form.Label>
+                                <Form.Select size="sm" value={form.type} onChange={e => setField('type', e.target.value)}>
+                                    <option value="">Select type…</option>
+                                    {partnerTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                </Form.Select>
+                            </div>
+                            <div className="col-6 col-md-3">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </Form.Select>
+                            </div>
+                        </div>
+                    )}
+                    columns={[
+                        { header: 'Name', render: (i) => <span className="fw-semibold text-dark">{i.name}</span> },
+                        { header: 'Type', render: (i) => partnerTypeLabel(i.type) },
+                        { header: 'Status', render: (i) => <StatusBadge status={i.status} /> }
+                    ]}
+                />
+            </div>
+        </div>
+    );
+};
+
 const ConfigurationManager = () => {
     const [config, setConfig] = useState(null);
     const [meta, setMeta] = useState(null);
@@ -101,6 +529,7 @@ const ConfigurationManager = () => {
 
     const activeGroup = useMemo(() => GROUPS.find(g => g.key === group), [group]);
 
+    // ---- Generic simple lists (Skills, Languages, Leave Types, ...) -----------
     const add = async (list) => {
         const draft = drafts[list.type] || {};
         const nameField = list.nameField || 'name';
@@ -113,7 +542,6 @@ const ConfigurationManager = () => {
 
         setBusy(list.type);
         try {
-            // The API always expects `name`; a few lists display it under another label.
             const payload = { ...draft, name: value.trim() };
             await api.post(`/config/${list.type}`, payload);
             toast.success(`${list.label.replace(/s$/, '')} added`);
@@ -172,78 +600,81 @@ const ConfigurationManager = () => {
                 </div>
             )}
 
-            <div className="row g-3">
-                {activeGroup?.lists.map(list => {
-                    const items = config?.[FIELD_BY_TYPE[list.type]] || [];
-                    const nameField = list.nameField || 'name';
-                    const draft = drafts[list.type] || {};
+            {activeGroup?.custom ? (
+                <OrganizationStructure config={config} meta={meta} onChanged={load} />
+            ) : (
+                <div className="row g-3">
+                    {activeGroup?.lists.map(list => {
+                        const items = config?.[FIELD_BY_TYPE[list.type]] || [];
+                        const nameField = list.nameField || 'name';
+                        const draft = drafts[list.type] || {};
 
-                    return (
-                        <div className="col-12 col-lg-6" key={list.type}>
-                            <Card className="p-3 h-100">
-                                <div className="d-flex justify-content-between align-items-center mb-2">
-                                    <div className="fw-semibold text-dark" style={{ fontSize: '0.9rem' }}>{list.label}</div>
-                                    <span className="text-muted" style={{ fontSize: '0.75rem' }}>{items.length} item(s)</span>
-                                </div>
-
-                                <div className="d-flex gap-2 mb-3 flex-wrap">
-                                    <Form.Control
-                                        size="sm"
-                                        value={draft[nameField] || ''}
-                                        placeholder={`Add ${list.label.replace(/s$/, '').toLowerCase()}`}
-                                        onChange={e => setDraft(list.type, nameField, e.target.value)}
-                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(list); } }}
-                                        style={{ flex: '1 1 140px', fontSize: '0.82rem' }}
-                                    />
-                                    {list.fields.filter(f => f !== nameField).map(field => (
-                                        <Form.Control
-                                            key={field}
-                                            size="sm"
-                                            value={draft[field] || ''}
-                                            placeholder={field}
-                                            onChange={e => setDraft(list.type, field, e.target.value)}
-                                            style={{ flex: '0 1 110px', fontSize: '0.82rem' }}
-                                        />
-                                    ))}
-                                    <Button size="sm" disabled={busy === list.type} onClick={() => add(list)}>
-                                        <FaPlus size={11} />
-                                    </Button>
-                                </div>
-
-                                {items.length === 0 ? (
-                                    <EmptyState title="Nothing configured yet"
-                                                description={`Add your first ${list.label.replace(/s$/, '').toLowerCase()}.`} />
-                                ) : (
-                                    <div className="d-flex flex-wrap gap-2">
-                                        {items.map(item => (
-                                            <span key={item._id}
-                                                  className="d-inline-flex align-items-center gap-2 soft-chip"
-                                                  style={{
-                                                      background: '#F1F5F9', borderRadius: 999,
-                                                      padding: '4px 10px', fontSize: '0.78rem'
-                                                  }}>
-                                                <span className="text-dark">{item[nameField] || item.name}</span>
-                                                {item.daysPerYear ? (
-                                                    <span className="text-muted">{item.daysPerYear}d</span>
-                                                ) : null}
-                                                <button
-                                                    className="btn btn-link p-0 text-danger border-0"
-                                                    style={{ lineHeight: 1 }}
-                                                    disabled={busy === list.type}
-                                                    onClick={() => remove(list, item)}
-                                                    aria-label={`Remove ${item[nameField] || item.name}`}
-                                                >
-                                                    <FaTrash size={10} />
-                                                </button>
-                                            </span>
-                                        ))}
+                        return (
+                            <div className="col-12 col-lg-6" key={list.type}>
+                                <Card className="p-3 h-100">
+                                    <div className="d-flex justify-content-between align-items-center mb-2">
+                                        <div className="fw-semibold text-dark" style={{ fontSize: '0.9rem' }}>{list.label}</div>
+                                        <span className="text-muted" style={{ fontSize: '0.75rem' }}>{items.length} item(s)</span>
                                     </div>
-                                )}
-                            </Card>
-                        </div>
-                    );
-                })}
-            </div>
+
+                                    <div className="d-flex gap-2 mb-3 flex-wrap">
+                                        <Form.Control
+                                            size="sm"
+                                            value={draft[nameField] || ''}
+                                            placeholder={`Add ${list.label.replace(/s$/, '').toLowerCase()}`}
+                                            onChange={e => setDraft(list.type, nameField, e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(list); } }}
+                                            style={{ flex: '1 1 140px', fontSize: '0.82rem' }}
+                                        />
+                                        {list.fields.filter(f => f !== nameField).map(field => (
+                                            <Form.Control
+                                                key={field}
+                                                size="sm"
+                                                value={draft[field] || ''}
+                                                placeholder={field}
+                                                onChange={e => setDraft(list.type, field, e.target.value)}
+                                                style={{ flex: '0 1 110px', fontSize: '0.82rem' }}
+                                            />
+                                        ))}
+                                        <Button size="sm" disabled={busy === list.type} onClick={() => add(list)}>
+                                            <FaPlus size={11} />
+                                        </Button>
+                                    </div>
+
+                                    {items.length === 0 ? (
+                                        <EmptyState title="Nothing configured yet"
+                                                    description={`Add your first ${list.label.replace(/s$/, '').toLowerCase()}.`} />
+                                    ) : (
+                                        <div className="d-flex flex-wrap gap-2">
+                                            {items.map(item => (
+                                                <span key={item._id}
+                                                      className="d-inline-flex align-items-center gap-2 soft-chip"
+                                                      style={{
+                                                          background: '#F1F5F9', borderRadius: 999,
+                                                          padding: '4px 10px', fontSize: '0.78rem'
+                                                      }}>
+                                                    <span className="text-dark">{item[nameField] || item.name}</span>
+                                                    {item.daysPerYear ? (
+                                                        <span className="text-muted">{item.daysPerYear}d</span>
+                                                    ) : null}
+                                                    <button
+                                                        className="btn btn-link p-0 text-danger border-0"
+                                                        style={{ lineHeight: 1 }}
+                                                        disabled={busy === list.type}
+                                                        onClick={() => remove(list, item)}
+                                                    >
+                                                        <FaTrash size={10} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </Card>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
         </div>
     );
 };

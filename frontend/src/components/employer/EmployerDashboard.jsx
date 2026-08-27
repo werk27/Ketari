@@ -251,7 +251,7 @@ const EmployerDashboard = () => {
                                                 <span className="fw-semibold text-dark">{value}</span>
                                             </div>
                                             <div className="rail" style={{ height: 6, background: '#F1F5F9', borderRadius: 999 }}>
-                                                <div style={{ width: `${pct}%`, height: '100%', background: '#4F46E5', borderRadius: 999 }} />
+                                                <div style={{ width: `${pct}%`, height: '100%', background: '#0F6B4F', borderRadius: 999 }} />
                                             </div>
                                         </div>
                                     );

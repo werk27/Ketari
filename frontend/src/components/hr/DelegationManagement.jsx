@@ -35,18 +35,36 @@ const DelegationManagement = () => {
         setLoading(true);
         setError(null);
         try {
-            const [list, teamRes] = await Promise.all([
+            const [listResult, teamResult] = await Promise.allSettled([
                 api.get('/delegations/organization').catch(() => api.get('/delegations')),
-                api.get('/employers/me/team').catch(() => ({ data: { team: [] } }))
+                canCreate ? api.get('/delegations/colleagues') : Promise.resolve({ data: { data: [] } })
             ]);
-            setDelegations(list.data.data || []);
-            setTeam(teamRes.data.team || []);
+
+            if (listResult.status === 'rejected') {
+                throw listResult.reason;
+            }
+            setDelegations(listResult.value.data.data || []);
+
+            if (teamResult.status === 'fulfilled') {
+                setTeam(teamResult.value.data.data || []);
+            } else {
+                // The delegation list itself still loaded fine, so don't block
+                // the whole page - but a silently empty "Delegate to" dropdown
+                // looks exactly like "there's nobody to delegate to", which is
+                // misleading when the real cause is a failed request.
+                setTeam([]);
+                console.error('Failed to load delegation candidates:', teamResult.reason);
+                toast.error(
+                    teamResult.reason?.response?.data?.message
+                    || 'Could not load colleagues to delegate to. Try reopening this page.'
+                );
+            }
         } catch (err) {
             setError(err.response?.data?.message || 'Unable to load delegations.');
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [canCreate]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -156,7 +174,10 @@ const DelegationManagement = () => {
                                 <Form.Select required value={form.delegate}
                                              onChange={e => setForm({ ...form, delegate: e.target.value })}>
                                     <option value="">Select a colleague…</option>
-                                    {team.filter(m => m.status === 'active').map(member => (
+                                    {/* The API already returns only active members of the
+                                        organization (see getDelegationCandidates), so no
+                                        client-side status filter is needed here. */}
+                                    {team.map(member => (
                                         <option key={member._id} value={member._id}>
                                             {member.name} — {member.role}
                                         </option>

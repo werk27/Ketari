@@ -1,4 +1,8 @@
+const mongoose = require('mongoose');
 const Configuration = require('../models/Configuration');
+const Employee = require('../models/Employee');
+const JobRequisition = require('../models/JobRequisition');
+const User = require('../models/User');
 
 /**
  * Configuration module (spec §19 / §20).
@@ -13,6 +17,15 @@ const Configuration = require('../models/Configuration');
  * PERSONAL      - religion, marital status and blood type are option lists used
  *                 when completing an EMPLOYEE PROFILE. They are never mandatory
  *                 recruitment criteria and never appear in the vacancy workflow.
+ *
+ * Organization structure (spec item 14): Departments are the foundation.
+ * Positions belong to a Department. Position Ranks are global and reusable
+ * (e.g. "Senior" applies across many positions), not owned by one Position -
+ * this mirrors the pre-existing schema, with a single fixed `salary` per rank
+ * (never a min/max range, matching the same rule already enforced for
+ * vacancy salaries). Job Titles and Partners are their own standalone lists:
+ * nothing else in the system currently relates a Job Title to a Department,
+ * so that relationship is not invented here.
  */
 
 /** Lookup collections an organization may edit. */
@@ -42,6 +55,13 @@ const CONFIG_COLLECTIONS = {
 /** Lists that describe a person, not the organization's structure. */
 const PERSONAL_ATTRIBUTE_COLLECTIONS = ['religions', 'maritalStatus', 'bloodTypes'];
 
+/** Cross-referenced by Positions/Departments/Ranks - checked before a hard delete. */
+const RELATIONAL_TYPES = ['departments', 'positions', 'position-ranks'];
+
+const PARTNER_TYPE_VALUES = Configuration.PARTNER_TYPES.map(t => t.value);
+
+const isActiveStatus = (status) => (['active', 'inactive'].includes(status) ? status : 'active');
+
 /**
  * Resolve the configuration document for a request.
  * Organization members get their own document (seeded from platform defaults on
@@ -59,7 +79,44 @@ const resolveConfiguration = async (req, { create = true } = {}) => {
     const seed = { employer: employerId };
 
     if (defaults) {
+        const departmentIdMap = new Map();
+        const rankIdMap = new Map();
+
+        // Departments and Position Ranks are cloned first (assigning each a
+        // brand new _id up front) so Positions - cloned afterwards - can
+        // remap their `department`/`rank` references onto the NEW organization's
+        // own copies instead of pointing at the platform default's ids, which
+        // no longer exist once this document is a separate copy.
+        if (Array.isArray(defaults.departments) && defaults.departments.length > 0) {
+            seed.departments = defaults.departments.map(item => {
+                const plain = item.toObject ? item.toObject() : { ...item };
+                const newId = new mongoose.Types.ObjectId();
+                departmentIdMap.set(String(plain._id), newId);
+                return { ...plain, _id: newId };
+            });
+        }
+        if (Array.isArray(defaults.positionRanks) && defaults.positionRanks.length > 0) {
+            seed.positionRanks = defaults.positionRanks.map(item => {
+                const plain = item.toObject ? item.toObject() : { ...item };
+                const newId = new mongoose.Types.ObjectId();
+                rankIdMap.set(String(plain._id), newId);
+                return { ...plain, _id: newId };
+            });
+        }
+        if (Array.isArray(defaults.positions) && defaults.positions.length > 0) {
+            seed.positions = defaults.positions.map(item => {
+                const plain = item.toObject ? item.toObject() : { ...item };
+                delete plain._id;
+                return {
+                    ...plain,
+                    department: departmentIdMap.get(String(plain.department)) || plain.department,
+                    rank: plain.rank ? (rankIdMap.get(String(plain.rank)) || plain.rank) : null
+                };
+            });
+        }
+
         Object.values(CONFIG_COLLECTIONS).forEach(field => {
+            if (['departments', 'positionRanks', 'positions'].includes(field)) return;
             const items = defaults[field];
             if (Array.isArray(items) && items.length > 0) {
                 seed[field] = items.map(item => {
@@ -74,41 +131,212 @@ const resolveConfiguration = async (req, { create = true } = {}) => {
     return Configuration.create(seed);
 };
 
-const addConfigItem = async (req, res, field) => {
-    try {
-        if (!req.body || !req.body.name) {
-            return res.status(400).json({ success: false, message: 'A name is required' });
+/**
+ * Per-type validation for the configuration lists that carry real
+ * relationships or need more than "a name is required". Returns
+ * { error: 'specific reason' } or { value: sanitizedFieldsObject }.
+ * `editingId` excludes the record being edited from its own duplicate check.
+ * Validators may be async (e.g. departments checks the assigned manager
+ * against real User records) - always awaited by the callers below.
+ */
+const VALIDATORS = {
+    departments: async (body, config, editingId, req) => {
+        const name = (body.name || '').trim();
+        if (!name) return { error: 'Department name is required.' };
+
+        const duplicate = config.departments.find(d =>
+            d.name.toLowerCase() === name.toLowerCase() && String(d._id) !== String(editingId));
+        if (duplicate) return { error: `A department named "${name}" already exists.` };
+
+        // The Department Head: an existing organization member who may raise
+        // Job Requisitions on this department's behalf (see
+        // requisitionController). Optional - a department can have no head
+        // assigned yet - but if one is given it must be a real member of
+        // THIS organization, never free text and never another org's user.
+        let manager = null;
+        if (body.manager) {
+            if (!mongoose.Types.ObjectId.isValid(body.manager)) {
+                return { error: 'Selected department head does not exist.' };
+            }
+            const candidate = await User.findById(body.manager).select('employer status');
+            if (!candidate || !candidate.employer || String(candidate.employer) !== String(req.employerId)) {
+                return { error: 'Selected department head does not exist.' };
+            }
+            if (candidate.status === 'inactive') {
+                return { error: 'Selected department head\'s account is inactive.' };
+            }
+            manager = candidate._id;
         }
 
-        const config = await resolveConfiguration(req);
+        return {
+            value: {
+                name,
+                code: (body.code || '').trim(),
+                description: body.description || '',
+                manager,
+                status: isActiveStatus(body.status)
+            }
+        };
+    },
 
-        if (!Array.isArray(config[field])) config[field] = [];
+    positions: (body, config, editingId) => {
+        const title = (body.title || body.name || '').trim();
+        if (!title) return { error: 'Position name is required.' };
 
-        const exists = config[field].some(
-            item => String(item.name).toLowerCase() === String(req.body.name).toLowerCase()
-        );
-        if (exists) {
-            return res.status(400).json({
-                success: false,
-                message: `"${req.body.name}" already exists in this list`
-            });
+        if (!body.department) return { error: 'Please select a department.' };
+        const department = config.departments.id(body.department);
+        if (!department) return { error: 'Selected department does not exist.' };
+
+        let rank = null;
+        if (body.rank) {
+            rank = config.positionRanks.id(body.rank);
+            if (!rank) return { error: 'Selected position rank does not exist.' };
         }
 
-        config[field].push(req.body);
-        await config.save();
+        const duplicate = config.positions.find(p =>
+            p.title.toLowerCase() === title.toLowerCase() &&
+            String(p.department) === String(department._id) &&
+            String(p._id) !== String(editingId));
+        if (duplicate) return { error: `A position named "${title}" already exists in this department.` };
 
-        res.status(201).json({ success: true, data: config });
-    } catch (error) {
-        console.error(`Add ${field} Error:`, error);
-        if (error.name === 'ValidationError') {
-            return res.status(400).json({
-                success: false,
-                message: 'Validation Error',
-                errors: Object.values(error.errors).map(e => e.message)
-            });
+        return {
+            value: {
+                title,
+                code: (body.code || '').trim(),
+                department: department._id,
+                rank: rank ? rank._id : null,
+                description: body.description || '',
+                status: isActiveStatus(body.status)
+            }
+        };
+    },
+
+    'position-ranks': (body, config, editingId) => {
+        const name = (body.name || '').trim();
+        if (!name) return { error: 'Position rank name is required.' };
+
+        const duplicate = config.positionRanks.find(r =>
+            r.name.toLowerCase() === name.toLowerCase() && String(r._id) !== String(editingId));
+        if (duplicate) return { error: `A position rank named "${name}" already exists.` };
+
+        // One fixed salary amount only - never a range - matching the same
+        // rule already enforced for vacancy salaries (Job.salary).
+        if (body.minSalary !== undefined || body.maxSalary !== undefined) {
+            return { error: 'Salary ranges are not supported; provide a single, fixed salary amount.' };
         }
-        res.status(500).json({ success: false, message: 'Server Error' });
+
+        let salary;
+        if (body.salary !== undefined && body.salary !== '' && body.salary !== null) {
+            salary = Number(body.salary);
+            if (Number.isNaN(salary) || salary <= 0) {
+                return { error: 'Salary must be a valid positive number.' };
+            }
+        }
+
+        let level;
+        if (body.level !== undefined && body.level !== '' && body.level !== null) {
+            level = Number(body.level);
+            if (Number.isNaN(level)) return { error: 'Level must be a valid number.' };
+        }
+
+        return {
+            value: {
+                name,
+                level,
+                salary,
+                description: body.description || '',
+                status: isActiveStatus(body.status)
+            }
+        };
+    },
+
+    'job-titles': (body, config, editingId) => {
+        const name = (body.name || '').trim();
+        if (!name) return { error: 'Job title name is required.' };
+
+        const duplicate = config.jobTitles.find(j =>
+            j.name.toLowerCase() === name.toLowerCase() && String(j._id) !== String(editingId));
+        if (duplicate) return { error: `A job title named "${name}" already exists.` };
+
+        return {
+            value: {
+                name,
+                code: (body.code || '').trim(),
+                description: body.description || '',
+                status: isActiveStatus(body.status)
+            }
+        };
+    },
+
+    partners: (body, config, editingId) => {
+        const name = (body.name || '').trim();
+        if (!name) return { error: 'Partner name is required.' };
+
+        if (!PARTNER_TYPE_VALUES.includes(body.type)) return { error: 'Please select a valid partner type.' };
+
+        const duplicate = config.partners.find(p =>
+            p.name.toLowerCase() === name.toLowerCase() && String(p._id) !== String(editingId));
+        if (duplicate) return { error: `A partner named "${name}" already exists.` };
+
+        return {
+            value: {
+                name,
+                type: body.type,
+                contactPerson: body.contactPerson || '',
+                email: body.email || '',
+                phone: body.phone || '',
+                status: isActiveStatus(body.status)
+            }
+        };
     }
+};
+
+/** Every other list (skills, languages, leave types, ...) keeps the original simple name-based rule. */
+const genericValidate = (body, config, editingId, field, label) => {
+    const name = (body.name || '').trim();
+    if (!name) return { error: `${label} name is required.` };
+
+    const duplicate = (config[field] || []).find(item =>
+        String(item.name).toLowerCase() === name.toLowerCase() && String(item._id) !== String(editingId));
+    if (duplicate) return { error: `"${name}" already exists in this list.` };
+
+    return { value: { ...body, name } };
+};
+
+/**
+ * Before a hard delete, make sure nothing still points at this record -
+ * mirrors the business rule already used for Employees/Vacancies: deactivate,
+ * don't destroy, anything still referenced.
+ */
+const findReferenceBlockingDelete = async (type, item, config, req) => {
+    if (type === 'departments') {
+        if (config.positions.some(p => String(p.department) === String(item._id))) {
+            return 'This department has positions configured under it. Remove or reassign those positions first, or set this department to inactive instead of deleting it.';
+        }
+        if (req.employerId) {
+            const usedByEmployee = await Employee.exists({ employer: req.employerId, 'employmentInfo.department': item._id });
+            if (usedByEmployee) return 'This department is assigned to one or more employees. Set it to inactive instead of deleting it.';
+            const usedByRequisition = await JobRequisition.exists({ employer: req.employerId, department: item._id });
+            if (usedByRequisition) return 'This department is referenced by one or more job requisitions. Set it to inactive instead of deleting it.';
+        }
+    }
+
+    if (type === 'positions') {
+        if (req.employerId) {
+            const usedByEmployee = await Employee.exists({ employer: req.employerId, 'employmentInfo.position': item._id });
+            if (usedByEmployee) return 'This position is assigned to one or more employees. Set it to inactive instead of deleting it.';
+            const usedByRequisition = await JobRequisition.exists({ employer: req.employerId, position: item._id });
+            if (usedByRequisition) return 'This position is referenced by one or more job requisitions. Set it to inactive instead of deleting it.';
+        }
+    }
+
+    if (type === 'position-ranks') {
+        if (config.positions.some(p => p.rank && String(p.rank) === String(item._id))) {
+            return 'This position rank is assigned to one or more positions. Remove that assignment first, or set the rank to inactive instead of deleting it.';
+        }
+    }
+
+    return null;
 };
 
 // @desc    Get the caller's configuration
@@ -123,7 +351,8 @@ exports.getConfigurations = async (req, res) => {
             data: config || {},
             meta: {
                 scope: req.employerId ? 'organization' : 'platform',
-                personalAttributeCollections: PERSONAL_ATTRIBUTE_COLLECTIONS
+                personalAttributeCollections: PERSONAL_ATTRIBUTE_COLLECTIONS,
+                partnerTypes: Configuration.PARTNER_TYPES
             }
         });
     } catch (error) {
@@ -153,20 +382,52 @@ exports.updateOrganization = async (req, res) => {
     }
 };
 
+/** Human-readable label for a config type, used in generic validator error messages. */
+const LABELS = {
+    'skills': 'Skill', 'languages': 'Language', 'licenses': 'License',
+    'education-levels': 'Education level', 'employment-status': 'Employment status',
+    'leave-types': 'Leave type', 'training-types': 'Training type',
+    'termination-reasons': 'Termination reason', 'deduction-types': 'Deduction type',
+    'nations': 'Nation', 'titles': 'Title', 'religions': 'Religion',
+    'marital-status': 'Marital status', 'blood-types': 'Blood type'
+};
+
 // @desc    Add an item to a configuration list
 // @route   POST /api/config/:type
 // @access  Private (org:config / platform:config)
 exports.addConfigEntry = async (req, res) => {
-    const field = CONFIG_COLLECTIONS[req.params.type];
+    try {
+        const type = req.params.type;
+        const field = CONFIG_COLLECTIONS[type];
+        if (!field) {
+            return res.status(404).json({
+                success: false,
+                message: `Unknown configuration list "${type}". Available: ${Object.keys(CONFIG_COLLECTIONS).join(', ')}`
+            });
+        }
 
-    if (!field) {
-        return res.status(404).json({
-            success: false,
-            message: `Unknown configuration list "${req.params.type}". Available: ${Object.keys(CONFIG_COLLECTIONS).join(', ')}`
-        });
+        const config = await resolveConfiguration(req);
+        const validate = VALIDATORS[type] || ((body, cfg, id) => genericValidate(body, cfg, id, field, LABELS[type] || 'Item'));
+        const result = await validate(req.body || {}, config, null, req);
+
+        if (result.error) {
+            return res.status(400).json({ success: false, message: result.error });
+        }
+
+        config[field].push(result.value);
+        await config.save();
+
+        res.status(201).json({ success: true, data: config });
+    } catch (error) {
+        console.error(`Add ${req.params.type} Error:`, error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: Object.values(error.errors || {}).map(e => e.message).join(', ') || 'Please check the values you entered.'
+            });
+        }
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
-
-    return addConfigItem(req, res, field);
 };
 
 // @desc    Update an item in a configuration list
@@ -174,7 +435,8 @@ exports.addConfigEntry = async (req, res) => {
 // @access  Private (org:config / platform:config)
 exports.updateConfigEntry = async (req, res) => {
     try {
-        const field = CONFIG_COLLECTIONS[req.params.type];
+        const type = req.params.type;
+        const field = CONFIG_COLLECTIONS[type];
         if (!field) {
             return res.status(404).json({ success: false, message: 'Unknown configuration list' });
         }
@@ -189,23 +451,36 @@ exports.updateConfigEntry = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Configuration item not found' });
         }
 
-        const { _id, ...updates } = req.body;
-        Object.assign(item, updates);
+        const validate = VALIDATORS[type] || ((body, cfg, id) => genericValidate(body, cfg, id, field, LABELS[type] || 'Item'));
+        const result = await validate(req.body || {}, config, req.params.id, req);
+
+        if (result.error) {
+            return res.status(400).json({ success: false, message: result.error });
+        }
+
+        Object.assign(item, result.value);
         await config.save();
 
         res.status(200).json({ success: true, data: config });
     } catch (error) {
         console.error('Update Config Entry Error:', error);
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: Object.values(error.errors || {}).map(e => e.message).join(', ') || 'Please check the values you entered.'
+            });
+        }
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
 
-// @desc    Delete an item from a configuration list
+// @desc    Remove an item from a configuration list
 // @route   DELETE /api/config/:type/:id
 // @access  Private (org:config / platform:config)
 exports.deleteConfigItem = async (req, res) => {
     try {
-        const field = CONFIG_COLLECTIONS[req.params.type];
+        const type = req.params.type;
+        const field = CONFIG_COLLECTIONS[type];
         if (!field) {
             return res.status(404).json({ success: false, message: 'Unknown configuration list' });
         }
@@ -215,14 +490,21 @@ exports.deleteConfigItem = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Configuration not found' });
         }
 
-        const before = (config[field] || []).length;
-        config[field] = (config[field] || []).filter(item => item._id.toString() !== req.params.id);
-
-        if (config[field].length === before) {
+        const item = (config[field] || []).id(req.params.id);
+        if (!item) {
             return res.status(404).json({ success: false, message: 'Configuration item not found' });
         }
 
+        if (RELATIONAL_TYPES.includes(type)) {
+            const blockingReason = await findReferenceBlockingDelete(type, item, config, req);
+            if (blockingReason) {
+                return res.status(409).json({ success: false, message: blockingReason });
+            }
+        }
+
+        config[field].pull(req.params.id);
         await config.save();
+
         res.status(200).json({ success: true, data: config });
     } catch (error) {
         console.error('Delete Config Item Error:', error);

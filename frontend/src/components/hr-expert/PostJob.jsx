@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Form, Button, Spinner, Alert } from 'react-bootstrap';
-import { useNavigate } from 'react-router-dom';
-import { FaSave, FaTimes, FaPlus, FaTrash } from 'react-icons/fa';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { FaSave, FaTimes, FaPlus, FaTrash, FaClipboardList } from 'react-icons/fa';
 import { useLanguage } from '../../context/LanguageContext';
-import api from '../../services/api';
+import api, { formatSalary } from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
 import { useAuth } from '../../context/AuthContext';
@@ -12,8 +12,14 @@ const PostJob = () => {
     const navigate = useNavigate();
     const { t } = useLanguage();
     const { user } = useAuth();
+    const [searchParams] = useSearchParams();
+    const requisitionId = searchParams.get('requisitionId');
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [requisition, setRequisition] = useState(null);
+    const [requisitionError, setRequisitionError] = useState('');
+    const [loadingRequisition, setLoadingRequisition] = useState(Boolean(requisitionId));
     const [formData, setFormData] = useState({
         title: '',
         department: '',
@@ -28,13 +34,43 @@ const PostJob = () => {
             qualifications: []
         },
         salary: {
-            min: '',
-            max: '',
-            currency: 'ETB'
+            amount: '',
+            currency: 'ETB',
+            period: 'monthly'
         }
     });
     const [newSkill, setNewSkill] = useState('');
     const [newQualification, setNewQualification] = useState('');
+
+    const loadRequisition = useCallback(async () => {
+        if (!requisitionId) return;
+        setLoadingRequisition(true);
+        setRequisitionError('');
+        try {
+            const res = await api.get(`/requisitions/${requisitionId}`);
+            const r = res.data.data;
+            if (r.status !== 'approved') {
+                setRequisitionError(`This requisition is "${r.status.replace('_', ' ')}", not approved. Only an approved requisition can create a vacancy.`);
+                return;
+            }
+            setRequisition(r);
+            // Essential fields come straight from the requisition and are
+            // never re-typed here; the backend re-derives and locks them
+            // from the requisition again regardless of what this form sends.
+            setFormData(prev => ({
+                ...prev,
+                title: r.positionTitle,
+                department: r.departmentName,
+                employmentType: r.employmentType
+            }));
+        } catch (err) {
+            setRequisitionError(err.response?.data?.message || 'Unable to load this requisition.');
+        } finally {
+            setLoadingRequisition(false);
+        }
+    }, [requisitionId]);
+
+    useEffect(() => { loadRequisition(); }, [loadRequisition]);
 
     const handleChange = (e) => {
         const { name, value } = e.target;
@@ -107,9 +143,24 @@ const PostJob = () => {
         setLoading(true);
         setError('');
 
-        // Validation
-        if (!formData.title || !formData.department || !formData.description || !formData.location || !formData.applicationDeadline) {
-            setError('Please fill in all required fields');
+        // When creating from an approved requisition, title/department/salary
+        // are supplied by the requisition itself and are not re-typed here.
+        if (!requisition) {
+            if (!formData.title || !formData.department || !formData.description || !formData.location || !formData.applicationDeadline) {
+                setError('Please fill in all required fields');
+                setLoading(false);
+                return;
+            }
+
+            // One fixed salary amount is required - never a range, never negotiable.
+            const salaryAmount = Number(formData.salary.amount);
+            if (!formData.salary.amount || Number.isNaN(salaryAmount) || salaryAmount <= 0) {
+                setError('Please enter a valid, positive salary amount');
+                setLoading(false);
+                return;
+            }
+        } else if (!formData.description || !formData.location || !formData.applicationDeadline) {
+            setError('Please fill in the description, location and application deadline');
             setLoading(false);
             return;
         }
@@ -117,7 +168,13 @@ const PostJob = () => {
         try {
             // The HR Expert may only save a draft or submit for approval.
             // Publishing is the HR Manager's decision, enforced by the backend.
-            const payload = { ...formData, action: intent };
+            const salaryAmount = Number(formData.salary.amount) || undefined;
+            const payload = {
+                ...formData,
+                salary: requisition ? undefined : { ...formData.salary, amount: salaryAmount },
+                requisitionId: requisition ? requisition._id : undefined,
+                action: intent
+            };
             await api.post('/jobs', payload);
             const msg = intent === 'submit'
                 ? 'Vacancy submitted for HR Manager approval'
@@ -147,6 +204,39 @@ const PostJob = () => {
                     </Button>
                 </div>
 
+                {loadingRequisition && (
+                    <div className="text-center py-4">
+                        <Spinner animation="border" variant="primary" />
+                        <div className="text-muted mt-2" style={{ fontSize: '0.85rem' }}>Loading the approved requisition…</div>
+                    </div>
+                )}
+
+                {requisitionError && <Alert variant="danger">{requisitionError}</Alert>}
+
+                {requisition && (
+                    <Row>
+                        <Col lg={8} className="mx-auto mb-3">
+                            <Alert variant="success" className="d-flex align-items-start gap-2">
+                                <FaClipboardList className="mt-1 flex-shrink-0" />
+                                <div>
+                                    <div className="fw-semibold">Creating this vacancy from an approved Job Requisition</div>
+                                    <div style={{ fontSize: '0.85rem' }}>
+                                        Title, department, headcount, employment type, level, requirements and salary below are
+                                        locked from the approved requisition and cannot be changed here. To change any of them,
+                                        ask HR to amend the requisition and have it re-approved.
+                                    </div>
+                                    <ul className="mb-0 mt-2" style={{ fontSize: '0.85rem' }}>
+                                        <li><strong>Position:</strong> {requisition.positionTitle} ({requisition.departmentName})</li>
+                                        <li><strong>Headcount:</strong> {requisition.numberOfPositions} · <strong>Level:</strong> {requisition.level} · <strong>Type:</strong> {requisition.employmentType}</li>
+                                        <li><strong>Salary:</strong> {formatSalary(requisition.salary)}</li>
+                                        {requisition.skills?.length > 0 && <li><strong>Skills:</strong> {requisition.skills.join(', ')}</li>}
+                                    </ul>
+                                </div>
+                            </Alert>
+                        </Col>
+                    </Row>
+                )}
+
                 <Row>
                     <Col lg={8} className="mx-auto">
                         <Card className="shadow-sm">
@@ -168,6 +258,7 @@ const PostJob = () => {
                                                 onChange={handleChange}
                                                 placeholder="e.g., Software Developer"
                                                 className="form-control-custom"
+                                                disabled={Boolean(requisition)}
                                                 required
                                             />
                                         </Col>
@@ -180,6 +271,7 @@ const PostJob = () => {
                                                 onChange={handleChange}
                                                 placeholder="e.g., ICT"
                                                 className="form-control-custom"
+                                                disabled={Boolean(requisition)}
                                                 required
                                             />
                                         </Col>
@@ -205,6 +297,7 @@ const PostJob = () => {
                                                 value={formData.employmentType}
                                                 onChange={handleChange}
                                                 className="form-control-custom"
+                                                disabled={Boolean(requisition)}
                                             >
                                                 <option value="Full-Time">Full-Time</option>
                                                 <option value="Part-Time">Part-Time</option>
@@ -243,62 +336,71 @@ const PostJob = () => {
 
                                     {/* Requirements */}
                                     <h5 className="fw-bold mb-3">Requirements</h5>
-                                    <Row>
-                                        <Col md={6} className="mb-3">
-                                            <Form.Label className="fw-semibold">Education</Form.Label>
-                                            <Form.Control
-                                                type="text"
-                                                name="requirements.education"
-                                                value={formData.requirements.education}
-                                                onChange={handleChange}
-                                                placeholder="e.g., B.Sc. Computer Science"
-                                                className="form-control-custom"
-                                            />
-                                        </Col>
-                                        <Col md={6} className="mb-3">
-                                            <Form.Label className="fw-semibold">Experience</Form.Label>
-                                            <Form.Control
-                                                type="text"
-                                                name="requirements.experience"
-                                                value={formData.requirements.experience}
-                                                onChange={handleChange}
-                                                placeholder="e.g., 2+ Years"
-                                                className="form-control-custom"
-                                            />
-                                        </Col>
-                                    </Row>
+                                    {requisition ? (
+                                        <Alert variant="light" className="border">
+                                            Education, experience and required skills are locked from the approved requisition
+                                            (see the summary above). You can still add extra qualifications below.
+                                        </Alert>
+                                    ) : (
+                                        <>
+                                            <Row>
+                                                <Col md={6} className="mb-3">
+                                                    <Form.Label className="fw-semibold">Education</Form.Label>
+                                                    <Form.Control
+                                                        type="text"
+                                                        name="requirements.education"
+                                                        value={formData.requirements.education}
+                                                        onChange={handleChange}
+                                                        placeholder="e.g., B.Sc. Computer Science"
+                                                        className="form-control-custom"
+                                                    />
+                                                </Col>
+                                                <Col md={6} className="mb-3">
+                                                    <Form.Label className="fw-semibold">Experience</Form.Label>
+                                                    <Form.Control
+                                                        type="text"
+                                                        name="requirements.experience"
+                                                        value={formData.requirements.experience}
+                                                        onChange={handleChange}
+                                                        placeholder="e.g., 2+ Years"
+                                                        className="form-control-custom"
+                                                    />
+                                                </Col>
+                                            </Row>
 
-                                    <Form.Group className="mb-3">
-                                        <Form.Label className="fw-semibold">Skills</Form.Label>
-                                        <div className="d-flex gap-2 mb-2">
-                                            <Form.Control
-                                                type="text"
-                                                value={newSkill}
-                                                onChange={(e) => setNewSkill(e.target.value)}
-                                                placeholder="Enter a skill"
-                                                className="form-control-custom"
-                                                onKeyPress={(e) => e.key === 'Enter' && handleAddSkill()}
-                                            />
-                                            <Button onClick={handleAddSkill} variant="primary">
-                                                <FaPlus />
-                                            </Button>
-                                        </div>
-                                        <div className="d-flex flex-wrap gap-2">
-                                            {formData.requirements.skills.map((skill, idx) => (
-                                                <span key={idx} className="badge bg-primary p-2 d-flex align-items-center gap-2">
-                                                    {skill}
-                                                    <Button
-                                                        variant="link"
-                                                        className="p-0 text-white"
-                                                        onClick={() => handleRemoveSkill(skill)}
-                                                        style={{ fontSize: '0.7rem' }}
-                                                    >
-                                                        <FaTrash />
+                                            <Form.Group className="mb-3">
+                                                <Form.Label className="fw-semibold">Skills</Form.Label>
+                                                <div className="d-flex gap-2 mb-2">
+                                                    <Form.Control
+                                                        type="text"
+                                                        value={newSkill}
+                                                        onChange={(e) => setNewSkill(e.target.value)}
+                                                        placeholder="Enter a skill"
+                                                        className="form-control-custom"
+                                                        onKeyPress={(e) => e.key === 'Enter' && handleAddSkill()}
+                                                    />
+                                                    <Button onClick={handleAddSkill} variant="primary">
+                                                        <FaPlus />
                                                     </Button>
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </Form.Group>
+                                                </div>
+                                                <div className="d-flex flex-wrap gap-2">
+                                                    {formData.requirements.skills.map((skill, idx) => (
+                                                        <span key={idx} className="badge bg-primary p-2 d-flex align-items-center gap-2">
+                                                            {skill}
+                                                            <Button
+                                                                variant="link"
+                                                                className="p-0 text-white"
+                                                                onClick={() => handleRemoveSkill(skill)}
+                                                                style={{ fontSize: '0.7rem' }}
+                                                            >
+                                                                <FaTrash />
+                                                            </Button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </Form.Group>
+                                        </>
+                                    )}
 
                                     <Form.Group className="mb-3">
                                         <Form.Label className="fw-semibold">Qualifications</Form.Label>
@@ -334,45 +436,63 @@ const PostJob = () => {
 
                                     <hr className="my-4" />
 
-                                    {/* Salary Information */}
-                                    <h5 className="fw-bold mb-3">Salary Information</h5>
-                                    <Row>
-                                        <Col md={4} className="mb-3">
-                                            <Form.Label className="fw-semibold">Min Salary</Form.Label>
-                                            <Form.Control
-                                                type="number"
-                                                name="salary.min"
-                                                value={formData.salary.min}
-                                                onChange={handleChange}
-                                                placeholder="Min"
-                                                className="form-control-custom"
-                                            />
-                                        </Col>
-                                        <Col md={4} className="mb-3">
-                                            <Form.Label className="fw-semibold">Max Salary</Form.Label>
-                                            <Form.Control
-                                                type="number"
-                                                name="salary.max"
-                                                value={formData.salary.max}
-                                                onChange={handleChange}
-                                                placeholder="Max"
-                                                className="form-control-custom"
-                                            />
-                                        </Col>
-                                        <Col md={4} className="mb-3">
-                                            <Form.Label className="fw-semibold">Currency</Form.Label>
-                                            <Form.Select
-                                                name="salary.currency"
-                                                value={formData.salary.currency}
-                                                onChange={handleChange}
-                                                className="form-control-custom"
-                                            >
-                                                <option value="ETB">ETB</option>
-                                                <option value="USD">USD</option>
-                                                <option value="EUR">EUR</option>
-                                            </Form.Select>
-                                        </Col>
-                                    </Row>
+                                    {/* Salary Information - one fixed amount, never a range or "negotiable" */}
+                                    {requisition ? (
+                                        <Alert variant="light" className="border">
+                                            <strong>Salary:</strong> {formatSalary(requisition.salary)} — locked from the approved requisition (see the summary above).
+                                        </Alert>
+                                    ) : (
+                                        <>
+                                            <h5 className="fw-bold mb-3">Salary Information</h5>
+                                            <Row>
+                                                <Col md={5} className="mb-3">
+                                                    <Form.Label className="fw-semibold">Salary Amount <span className="text-danger">*</span></Form.Label>
+                                                    <Form.Control
+                                                        type="number"
+                                                        min="1"
+                                                        step="1"
+                                                        name="salary.amount"
+                                                        value={formData.salary.amount}
+                                                        onChange={handleChange}
+                                                        placeholder="e.g. 25000"
+                                                        className="form-control-custom"
+                                                        required
+                                                    />
+                                                    <Form.Text className="text-muted">
+                                                        Fixed amount, not a range.
+                                                    </Form.Text>
+                                                </Col>
+                                                <Col md={4} className="mb-3">
+                                                    <Form.Label className="fw-semibold">Currency</Form.Label>
+                                                    <Form.Select
+                                                        name="salary.currency"
+                                                        value={formData.salary.currency}
+                                                        onChange={handleChange}
+                                                        className="form-control-custom"
+                                                    >
+                                                        <option value="ETB">ETB</option>
+                                                        <option value="USD">USD</option>
+                                                        <option value="EUR">EUR</option>
+                                                    </Form.Select>
+                                                </Col>
+                                                <Col md={3} className="mb-3">
+                                                    <Form.Label className="fw-semibold">Pay period</Form.Label>
+                                                    <Form.Select
+                                                        name="salary.period"
+                                                        value={formData.salary.period}
+                                                        onChange={handleChange}
+                                                        className="form-control-custom"
+                                                    >
+                                                        <option value="hourly">Hourly</option>
+                                                        <option value="daily">Daily</option>
+                                                        <option value="weekly">Weekly</option>
+                                                        <option value="monthly">Monthly</option>
+                                                        <option value="annual">Annual</option>
+                                                    </Form.Select>
+                                                </Col>
+                                            </Row>
+                                        </>
+                                    )}
 
                                      <div className="d-flex gap-3 mt-4">
                                          <Button

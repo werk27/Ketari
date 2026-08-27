@@ -2,8 +2,10 @@ const Application = require('../models/Application');
 const Job = require('../models/Job');
 const Resume = require('../models/Resume');
 const Employee = require('../models/Employee');
+const Employer = require('../models/Employer');
 const { validationResult } = require('express-validator');
 const { calculateMatchScore, calculateMatchDetails } = require('../services/matchingService');
+const { experienceYearsFor, insightsFor } = require('../services/candidateInsights');
 const { createEmployeeFromApplication } = require('../services/onboardingService');
 const auditService = require('../services/auditService');
 const notificationService = require('../services/notificationService');
@@ -25,6 +27,20 @@ const DECISION_STATUSES = ['selected', 'offered', 'hired'];
 // An application reaches the HR Manager once the HR Expert has finished
 // processing it. These are the states that still await an authorised decision.
 const AWAITING_DECISION_STATUSES = ['shortlisted', 'interview_scheduled', 'interviewed', 'selected', 'offered'];
+
+// Everything from shortlisting onward. Reaching interview or being hired does
+// not undo the fact that a candidate was shortlisted, so the report's
+// "shortlisted" filter has to include the stages that follow it.
+const SHORTLISTED_ONWARD_STATUSES = [
+    'shortlisted', 'interview_scheduled', 'interviewed', 'selected', 'offered', 'hired'
+];
+
+/**
+ * Treat user-supplied filter text as literal.
+ * Without this a candidate search for "C++" or a stray "(" reaches the regex
+ * engine as a pattern and either matches nothing or throws.
+ */
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * Verify the caller's organization owns the application, and return it.
@@ -145,6 +161,58 @@ exports.applyJob = async (req, res) => {
             { $addToSet: { applications: application._id } }
         );
 
+        // Notify the candidate (confirmation) and whoever needs to screen this
+        // application next - the vacancy's own HR Expert if one is assigned,
+        // otherwise every HR Expert in the organization. The employer also
+        // gets an org-wide view of new applications without doing the
+        // screening themselves.
+        await notificationService.notify({
+            user: req.user.id,
+            employer: job.employer,
+            type: 'application_update',
+            title: 'Application submitted',
+            message: `Your application for ${job.title} has been received.`,
+            link: '/candidate/dashboard'
+        });
+
+        if (job.hr_expert) {
+            await notificationService.notify({
+                user: job.hr_expert,
+                employer: job.employer,
+                type: 'new_application',
+                title: 'New application received',
+                message: `${req.user.name} applied for ${job.title}.`,
+                link: `/hr-expert/applications/${job._id}`
+            });
+        } else {
+            await notificationService.notifyRoles({
+                employer: job.employer,
+                roles: ['hr_expert'],
+                type: 'new_application',
+                title: 'New application received',
+                message: `${req.user.name} applied for ${job.title}.`,
+                link: `/hr-expert/applications/${job._id}`
+            });
+        }
+
+        await notificationService.notifyRoles({
+            employer: job.employer,
+            roles: ['employer'],
+            type: 'new_application',
+            title: 'New application received',
+            message: `${req.user.name} applied for ${job.title}.`,
+            link: `/employer/applications/${job._id}`
+        });
+
+        // Email confirmation is best effort - the in-app notification above
+        // always reaches the candidate even if SMTP is not configured.
+        try {
+            const employerOrg = await Employer.findById(job.employer).select('name');
+            await emailService.sendApplicationConfirmation(req.user.email, req.user.name, job.title, employerOrg?.name || '');
+        } catch (emailError) {
+            console.error('Application confirmation email failed:', emailError.message);
+        }
+
         res.status(201).json({
             success: true,
             application
@@ -161,6 +229,12 @@ exports.applyJob = async (req, res) => {
 // @desc    Get all applications for a job
 // @route   GET /api/applications/job/:jobId
 // @access  Private (organization members)
+//
+// This is the applicant report behind a vacancy, so it carries the search,
+// filter, sort and pagination the HR user needs to work through a large
+// shortlist. Every filter narrows the real Application/User records - nothing
+// here is computed from sample data - and the tenant check below runs before
+// any candidate is read.
 exports.getJobApplications = async (req, res) => {
     try {
         const job = await Job.findById(req.params.jobId);
@@ -181,20 +255,171 @@ exports.getJobApplications = async (req, res) => {
             });
         }
 
-        const query = { job: req.params.jobId };
-        if (req.query.status) query.status = req.query.status;
+        const {
+            search, status, minScore, maxScore, skills, education,
+            minExperience, dateFrom, dateTo, shortlisted,
+            sort = 'matchScore', order = 'desc'
+        } = req.query;
 
-        const applications = await Application.find(query)
+        const query = { job: req.params.jobId };
+
+        if (status) {
+            query.status = { $in: String(status).split(',').map(s => s.trim()).filter(Boolean) };
+        }
+
+        // "Shortlisted candidates" means everything from shortlisting onward -
+        // an applicant who has already reached interview has not stopped being
+        // shortlisted, and dropping them would hide the very people this filter
+        // exists to find.
+        if (shortlisted === 'true') {
+            query.status = { $in: SHORTLISTED_ONWARD_STATUSES };
+        }
+
+        const scoreFilter = {};
+        if (minScore !== undefined && minScore !== '') scoreFilter.$gte = Number(minScore);
+        if (maxScore !== undefined && maxScore !== '') scoreFilter.$lte = Number(maxScore);
+        if (Object.keys(scoreFilter).length > 0) query.matchScore = scoreFilter;
+
+        const dateFilter = {};
+        if (dateFrom) dateFilter.$gte = new Date(dateFrom);
+        if (dateTo) {
+            // An inclusive end date: a plain YYYY-MM-DD parses to midnight, so
+            // without this the last day of the range matches nothing.
+            const end = new Date(dateTo);
+            end.setHours(23, 59, 59, 999);
+            dateFilter.$lte = end;
+        }
+        if (Object.keys(dateFilter).length > 0) query.createdAt = dateFilter;
+
+        // Candidate-attribute filters live on the User document, so they are
+        // resolved to a set of applicant ids first. Scoped to the people who
+        // actually applied to THIS vacancy, so it can never widen into a search
+        // across the whole candidate pool.
+        const needsProfileFilter = [search, skills, education, minExperience]
+            .some(value => value !== undefined && value !== '');
+
+        if (needsProfileFilter) {
+            const applicantIds = await Application.find({ job: req.params.jobId }).distinct('applicant');
+            const userQuery = { _id: { $in: applicantIds } };
+
+            if (search) {
+                userQuery.$or = [
+                    { name: { $regex: escapeRegex(search), $options: 'i' } },
+                    { email: { $regex: escapeRegex(search), $options: 'i' } },
+                    { 'profile.skills': { $regex: escapeRegex(search), $options: 'i' } }
+                ];
+            }
+
+            if (skills) {
+                const wanted = String(skills).split(',').map(s => s.trim()).filter(Boolean);
+                if (wanted.length > 0) {
+                    userQuery['profile.skills'] = { $in: wanted.map(s => new RegExp(escapeRegex(s), 'i')) };
+                }
+            }
+
+            if (education) {
+                const pattern = new RegExp(escapeRegex(education), 'i');
+                userQuery.$and = [{
+                    $or: [
+                        { 'profile.education.degree': pattern },
+                        { 'profile.education.field': pattern },
+                        { 'profile.education.institution': pattern }
+                    ]
+                }];
+            }
+
+            let matching = await User.find(userQuery).select('_id profile.workExperience');
+
+            // Years of experience are derived from the profile rather than
+            // stored, so this one filter is applied in memory - over the
+            // applicants of a single vacancy, never the whole user collection.
+            if (minExperience !== undefined && minExperience !== '') {
+                const threshold = Number(minExperience);
+                if (Number.isFinite(threshold)) {
+                    matching = matching.filter(u => experienceYearsFor(u.profile) >= threshold);
+                }
+            }
+
+            query.applicant = { $in: matching.map(u => u._id) };
+        }
+
+        // Status tallies always describe the whole vacancy, not the filtered
+        // page, so the HR user keeps a stable picture of the pipeline while
+        // narrowing down within it.
+        const statusAgg = await Application.aggregate([
+            { $match: { job: job._id } },
+            { $group: { _id: '$status', count: { $sum: 1 } } }
+        ]);
+        const statusCounts = statusAgg.reduce((acc, row) => {
+            acc[row._id] = row.count;
+            return acc;
+        }, {});
+
+        const total = await Application.countDocuments(query);
+
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
+        const direction = order === 'asc' ? 1 : -1;
+
+        // `name` and `experience` describe the candidate, not the application,
+        // so they cannot be sorted by the database here; they are handled after
+        // loading, below.
+        const DB_SORTS = {
+            matchScore: { matchScore: direction, createdAt: -1 },
+            createdAt: { createdAt: direction },
+            status: { status: direction, matchScore: -1 }
+        };
+        const inMemorySort = ['name', 'experience'].includes(sort);
+
+        let cursor = Application.find(query)
             .populate('applicant', 'name email profile')
-            .populate('resume')
+            // filePath is an absolute location on the server's disk - never
+            // send it to the client. The actual file is read back through
+            // the authorized GET /resumes/:id/file route instead.
+            .populate('resume', 'fileName fileType parsedData')
+            .populate('screenedBy', 'name')
             .populate('shortlistedBy', 'name')
             .populate('decision.decidedBy', 'name')
-            .sort({ matchScore: -1, createdAt: -1 });
+            .populate('statusHistory.changedBy', 'name role');
+
+        if (!inMemorySort) {
+            cursor = cursor.sort(DB_SORTS[sort] || DB_SORTS.matchScore).skip((page - 1) * limit).limit(limit);
+        }
+
+        let applications = await cursor;
+
+        if (inMemorySort) {
+            const key = sort === 'name'
+                ? (a) => (a.applicant?.name || '').toLowerCase()
+                : (a) => experienceYearsFor(a.applicant?.profile);
+
+            applications = applications
+                .sort((a, b) => {
+                    const left = key(a);
+                    const right = key(b);
+                    if (left < right) return -1 * direction;
+                    if (left > right) return 1 * direction;
+                    return 0;
+                })
+                .slice((page - 1) * limit, page * limit);
+        }
+
+        // The derived figures the report table shows, attached here so the
+        // filter above and the displayed value can never disagree.
+        const rows = applications.map(application => ({
+            ...application.toObject(),
+            insights: insightsFor(application.applicant?.profile)
+        }));
 
         res.status(200).json({
             success: true,
-            count: applications.length,
-            applications
+            count: rows.length,
+            total,
+            page,
+            limit,
+            totalPages: Math.max(Math.ceil(total / limit), 1),
+            statusCounts,
+            applications: rows
         });
     } catch (error) {
         console.error(error);
@@ -259,8 +484,10 @@ exports.getPendingDecisions = async (req, res) => {
         })
             .populate('applicant', 'name email profile')
             .populate('job', 'title department location')
+            .populate('resume', 'fileName fileType parsedData')
             .populate('shortlistedBy', 'name')
             .populate('screenedBy', 'name')
+            .populate('statusHistory.changedBy', 'name role')
             .sort({ shortlistedAt: -1, matchScore: -1, createdAt: -1 });
 
         const strandedSet = new Set(strandedHires.map(id => id.toString()));
@@ -351,6 +578,54 @@ exports.updateApplicationStatus = async (req, res) => {
         });
 
         await application.save();
+
+        // Candidate: "Application status changed" / "Shortlisted". HR Manager:
+        // "Candidate awaiting review" once the application first enters the
+        // decision queue (getPendingDecisions already includes 'shortlisted'
+        // onward, so this is the exact moment a review becomes actionable).
+        const candidateMessages = {
+            under_review: `Your application for ${application.job.title} is now under review.`,
+            shortlisted: `Good news - you have been shortlisted for ${application.job.title}.`,
+            interviewed: `Your interview for ${application.job.title} has been recorded.`,
+            rejected: `Your application for ${application.job.title} was not successful.${note ? ` ${note}` : ''}`
+        };
+        if (candidateMessages[status]) {
+            await notificationService.notify({
+                user: application.applicant,
+                employer: application.employer,
+                type: 'application_update',
+                title: status === 'shortlisted' ? 'You have been shortlisted' : 'Application update',
+                message: candidateMessages[status],
+                link: '/candidate/dashboard'
+            });
+        }
+
+        if (status === 'shortlisted') {
+            await notificationService.notifyRoles({
+                employer: application.employer,
+                roles: ['hr_manager'],
+                type: 'application_update',
+                title: 'Candidate awaiting review',
+                message: `A shortlisted candidate for ${application.job.title} is awaiting your review.`,
+                link: '/hr-manager/shortlists'
+            });
+        }
+
+        if (status === 'rejected') {
+            try {
+                const candidate = await User.findById(application.applicant).select('name email');
+                if (candidate) {
+                    await emailService.sendApplicationRejected({
+                        to: candidate.email,
+                        name: candidate.name,
+                        jobTitle: application.job?.title || '',
+                        reason: note || ''
+                    });
+                }
+            } catch (emailError) {
+                console.error('Application rejection email failed:', emailError.message);
+            }
+        }
 
         res.status(200).json({
             success: true,
@@ -444,7 +719,7 @@ exports.decideApplication = async (req, res) => {
         let onboarding = null;
         if (outcome === 'approved' && finalStatus === 'hired') {
             try {
-                const { employee, created, activationSent } = await createEmployeeFromApplication(application, req);
+                const { employee, created, activationSent, activationLink } = await createEmployeeFromApplication(application, req);
                 onboarding = {
                     employeeId: employee.employeeId,
                     employee: employee._id,
@@ -452,7 +727,8 @@ exports.decideApplication = async (req, res) => {
                     created,
                     // The hire does not grant the employee workspace; the person
                     // does that themselves through the activation link.
-                    accountActivationPending: created && activationSent
+                    accountActivationPending: created && activationSent,
+                    activationLink: created && activationSent ? activationLink : null
                 };
             } catch (onboardingError) {
                 console.error('Employee onboarding failed:', onboardingError);
@@ -469,6 +745,11 @@ exports.decideApplication = async (req, res) => {
             to: finalStatus
         });
 
+        // A hire's activation link is the actionable next step, so this
+        // notification must point there rather than back to the dashboard
+        // the candidate is already on - otherwise it reads as a dead end,
+        // and the separate "activate your account" notification underneath
+        // it (older, so lower in the list) is easy to miss entirely.
         await notificationService.notify({
             user: application.applicant,
             employer: application.employer,
@@ -477,7 +758,7 @@ exports.decideApplication = async (req, res) => {
             message: outcome === 'approved'
                 ? `Congratulations - your application was approved (${finalStatus}).`
                 : `Your application was not successful.${reason ? ` Reason: ${reason}` : ''}`,
-            link: '/candidate/dashboard'
+            link: onboarding?.activationLink || '/candidate/dashboard'
         });
 
         // A rejected candidate gets no activation mail, so this is the only
@@ -557,6 +838,8 @@ exports.scheduleInterview = async (req, res) => {
             return res.status(error.code).json({ success: false, message: error.message });
         }
 
+        const isReschedule = application.status === 'interview_scheduled';
+
         application.interviewDate = interviewDate;
         application.interviewLocation = interviewLocation;
         application.status = 'interview_scheduled';
@@ -568,6 +851,31 @@ exports.scheduleInterview = async (req, res) => {
         });
 
         await application.save();
+
+        await notificationService.notify({
+            user: application.applicant,
+            employer: application.employer,
+            type: 'interview_scheduled',
+            title: isReschedule ? 'Interview rescheduled' : 'Interview scheduled',
+            message: `Your interview for ${application.job.title} is ${isReschedule ? 'now' : ''} scheduled for `
+                + `${new Date(interviewDate).toLocaleString()}${interviewLocation ? ` at ${interviewLocation}` : ''}.`,
+            link: '/candidate/dashboard'
+        });
+
+        // Email invitation is best effort - the in-app notification above
+        // always reaches the candidate even if SMTP is not configured.
+        try {
+            const candidate = await User.findById(application.applicant).select('name email');
+            const employerOrg = await Employer.findById(application.employer).select('name');
+            if (candidate) {
+                await emailService.sendInterviewInvitation(
+                    candidate.email, candidate.name, application.job.title, employerOrg?.name || '',
+                    interviewDate, interviewLocation, note
+                );
+            }
+        } catch (emailError) {
+            console.error('Interview invitation email failed:', emailError.message);
+        }
 
         res.status(200).json({
             success: true,

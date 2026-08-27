@@ -15,7 +15,14 @@
     "test:employer-verification": "node scripts/employerVerificationSelfTest.js",
     "test:candidate-privacy": "node scripts/candidatePrivacySelfTest.js",
     "test:hiring-activation": "node scripts/hiringActivationSelfTest.js",
-    "test:hiring": "node scripts/hiringFlowSelfTest.js"
+    "test:hiring": "node scripts/hiringFlowSelfTest.js",
+    "test:resume-privacy": "node scripts/resumePrivacySelfTest.js",
+    "test:employee-role": "node scripts/employeeRoleWorkflowSelfTest.js",
+    "test:notifications": "node scripts/notificationSelfTest.js",
+    "test:salary": "node scripts/salarySelfTest.js",
+    "test:requisitions": "node scripts/requisitionSelfTest.js",
+    "test:department-head": "node scripts/departmentHeadSelfTest.js",
+    "test:configuration": "node scripts/configurationSelfTest.js"
   },
   "dependencies": {
     "axios": "^1.19.0",
@@ -35,6 +42,7 @@
     "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
+    "form-data": "^4.0.0",
     "nodemon": "^3.0.1"
   }
 }

@@ -33,31 +33,43 @@ const ConfigurationSchema = new mongoose.Schema({
         status: { type: String, enum: ['active', 'inactive'], default: 'active' }
     }],
     
-    // Positions
+    // Positions - the department a position belongs to is mandatory: a
+    // Position is meaningless without a real, configured Department. `rank`
+    // optionally points at one of the organization's own (global, reusable)
+    // Position Ranks below - both are stored as the referenced sub-document's
+    // own _id, resolved and validated in configController rather than through
+    // a Mongoose `ref` populate (they live inside this same document, not a
+    // separate collection).
     positions: [{
         title: { type: String, required: true },
         code: { type: String, default: '' },
-        department: { type: mongoose.Schema.Types.ObjectId, ref: 'Configuration' },
-        rank: { type: String },
+        department: { type: mongoose.Schema.Types.ObjectId, required: true },
+        rank: { type: mongoose.Schema.Types.ObjectId, default: null },
         description: { type: String },
         status: { type: String, enum: ['active', 'inactive'], default: 'active' }
     }],
     
-    // Position Ranks
+    // Position Ranks - global, reusable across every position (e.g. "Senior"
+    // applies to many positions), not owned by a single one. `salary` is ONE
+    // fixed amount for that rank - never a min/max range - matching the same
+    // "one fixed figure" rule already enforced for vacancy salaries (Job.salary).
     positionRanks: [{
         name: { type: String, required: true },
         level: { type: Number },
-        minSalary: { type: Number },
-        maxSalary: { type: Number },
-        description: { type: String }
+        salary: { type: Number, min: 0 },
+        description: { type: String },
+        status: { type: String, enum: ['active', 'inactive'], default: 'active' }
     }],
     
-    // Job Titles
+    // Job Titles - a standalone HR reference list. Deliberately NOT required
+    // to belong to a Department: unlike Position (used by Job Requisitions),
+    // nothing in the system currently links a Job Title to a Department, so
+    // forcing that choice here would be a relationship the business model
+    // doesn't actually have.
     jobTitles: [{
         name: { type: String, required: true },
         code: { type: String, default: '' },
         description: { type: String },
-        department: { type: mongoose.Schema.Types.ObjectId, ref: 'Configuration' },
         status: { type: String, enum: ['active', 'inactive'], default: 'active' }
     }],
     
@@ -148,10 +160,20 @@ const ConfigurationSchema = new mongoose.Schema({
         status: { type: String, enum: ['active', 'inactive'], default: 'active' }
     }],
 
-    // Organization partners
+    // Organization partners - a partner organization this employer works
+    // with. The Admin platform-defaults screen already had an implied set of
+    // partner types (client/vendor/government/ngo/other) in its UI before
+    // this enum existed at the schema level - reused here rather than
+    // inventing a new list, and now also exported as PARTNER_TYPES below so
+    // every screen (including the Employer-facing Configuration page) uses
+    // the same authoritative set instead of duplicating it.
     partners: [{
         name: { type: String, required: true },
-        type: { type: String, default: '' },
+        type: {
+            type: String,
+            enum: ['client', 'vendor', 'government', 'ngo', 'other'],
+            required: true
+        },
         contactPerson: { type: String, default: '' },
         email: { type: String, default: '' },
         phone: { type: String, default: '' },
@@ -198,4 +220,14 @@ const ConfigurationSchema = new mongoose.Schema({
 // One configuration document per organization (plus one platform-default with employer: null).
 ConfigurationSchema.index({ employer: 1 }, { unique: true });
 
+/** Human labels for the fixed Partner Type list (see the `partners.type` enum above). */
+const PARTNER_TYPES = [
+    { value: 'client', label: 'Client' },
+    { value: 'vendor', label: 'Vendor' },
+    { value: 'government', label: 'Government' },
+    { value: 'ngo', label: 'NGO' },
+    { value: 'other', label: 'Other' }
+];
+
 module.exports = mongoose.model('Configuration', ConfigurationSchema);
+module.exports.PARTNER_TYPES = PARTNER_TYPES;

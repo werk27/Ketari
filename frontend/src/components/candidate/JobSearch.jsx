@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import { FaSearch, FaMapMarkerAlt, FaBriefcase, FaClock, FaFilter, FaStar, FaRobot, FaRegBookmark, FaBookmark, FaMoneyBillWave, FaTags, FaUsers } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import api from '../../services/api';
+import api, { formatSalary } from '../../services/api';
 import './JobSearch.css';
 
 const JobSearch = () => {
@@ -306,7 +306,7 @@ const JobSearch = () => {
                                                 <div className="job-meta-grid mb-3">
                                                     <div className="meta-item">
                                                         <FaMoneyBillWave className="meta-icon" /> 
-                                                        <span className="fw-bold">{job.budgetType || 'Negotiable'}</span>
+                                                        <span className="fw-bold">{formatSalary(job.salary)}</span>
                                                     </div>
                                                     <div className="meta-item">
                                                         <FaBriefcase className="meta-icon" />

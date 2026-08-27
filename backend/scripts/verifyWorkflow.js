@@ -66,6 +66,7 @@ const run = async () => {
             workMode: 'Hybrid',
             applicationDeadline: new Date(Date.now() + 30 * 864e5).toISOString(),
             requirements: { skills: ['JavaScript', 'Testing'], education: 'BSc', experience: '2 years' },
+            salary: { amount: 20000, currency: 'ETB', period: 'monthly' },
             // Attempt to self-publish: the backend must ignore this.
             status: 'published'
         }
@@ -94,7 +95,8 @@ const run = async () => {
             department: 'Engineering',
             description: 'x',
             location: 'Hawassa',
-            applicationDeadline: new Date(Date.now() + 864e5).toISOString()
+            applicationDeadline: new Date(Date.now() + 864e5).toISOString(),
+            salary: { amount: 20000, currency: 'ETB', period: 'monthly' }
         }
     });
     record('HR Manager CANNOT create a vacancy', managerCreate.status === 403,
@@ -136,7 +138,8 @@ const run = async () => {
             department: 'Engineering',
             description: 'Should stay private.',
             location: 'Hawassa',
-            applicationDeadline: new Date(Date.now() + 864e5).toISOString()
+            applicationDeadline: new Date(Date.now() + 864e5).toISOString(),
+            salary: { amount: 20000, currency: 'ETB', period: 'monthly' }
         }
     });
     const anonDraft = await call('GET', `/jobs/${draft2.data.job._id}`);

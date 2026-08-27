@@ -2,6 +2,17 @@ const Job = require('../models/Job');
 const Application = require('../models/Application');
 const User = require('../models/User');
 
+/**
+ * The recruitment stages an applicant report breaks down by, taken from the
+ * Application schema's own status enum so the report can never drift from the
+ * workflow it describes.
+ */
+const REPORTED_STATUSES = [
+    'applied', 'under_review', 'ai_analyzed', 'shortlisted',
+    'interview_scheduled', 'interviewed', 'selected', 'offered',
+    'hired', 'rejected', 'withdrawn'
+];
+
 // @desc    Get recruitment summary report
 // @route   GET /api/reports/summary
 // @access  Private (Admin)
@@ -135,9 +146,9 @@ exports.getSummaryReport = async (req, res) => {
     }
 };
 
-// @desc    Get job-specific report
+// @desc    Applicant report for one vacancy
 // @route   GET /api/reports/job/:jobId
-// @access  Private (Admin/Employer)
+// @access  Private (recruitment reporting, within the caller's own organization)
 exports.getJobReport = async (req, res) => {
     try {
         const job = await Job.findById(req.params.jobId)
@@ -147,36 +158,56 @@ exports.getJobReport = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Job not found' });
         }
 
+        // Tenant boundary. This report exposes applicant identities, so a
+        // vacancy belonging to another organization must be refused outright
+        // rather than answered - knowing the id is not authorization.
+        const employerId = req.employerId ? req.employerId.toString() : null;
+        const jobEmployerId = job.employer ? job.employer.toString() : null;
+
+        if (!jobEmployerId || jobEmployerId !== employerId) {
+            return res.status(403).json({
+                success: false,
+                message: 'This vacancy belongs to another organization'
+            });
+        }
+
         const applications = await Application.find({ job: job._id })
             .populate('applicant', 'name email profile')
             .sort({ matchScore: -1 });
 
-        const statusBreakdown = {
-            pending: applications.filter(a => a.status === 'pending').length,
-            reviewed: applications.filter(a => a.status === 'reviewed').length,
-            shortlisted: applications.filter(a => a.status === 'shortlisted').length,
-            interviewed: applications.filter(a => a.status === 'interviewed').length,
-            offered: applications.filter(a => a.status === 'offered').length,
-            rejected: applications.filter(a => a.status === 'rejected').length
-        };
+        // Counted from the Application schema's own enum. The previous list
+        // included 'pending' and 'reviewed' - 'reviewed' is not a status this
+        // system has ever had - so those rows always reported zero and the
+        // real stages (under_review, ai_analyzed, interview_scheduled, hired)
+        // were missing from the report entirely.
+        const statusBreakdown = REPORTED_STATUSES.reduce((acc, status) => {
+            acc[status] = applications.filter(a => a.status === status).length;
+            return acc;
+        }, {});
+
+        const scored = applications.filter(a => typeof a.matchScore === 'number');
 
         res.status(200).json({
             success: true,
             data: {
                 job: {
+                    id: job._id,
                     title: job.title,
                     department: job.department,
                     location: job.location,
+                    status: job.status,
                     hr_expert: job.hr_expert,
                     createdAt: job.createdAt
                 },
                 statistics: {
                     totalApplications: applications.length,
                     statusBreakdown,
-                    averageMatchScore: applications.length > 0 ?
-                        Math.round(applications.reduce((acc, a) => acc + (a.matchScore || 0), 0) / applications.length) : 0,
-                    shortlistRate: applications.length > 0 ?
-                        Math.round((statusBreakdown.shortlisted / applications.length) * 100) : 0
+                    averageMatchScore: scored.length > 0
+                        ? Math.round(scored.reduce((acc, a) => acc + a.matchScore, 0) / scored.length)
+                        : 0,
+                    shortlistRate: applications.length > 0
+                        ? Math.round((statusBreakdown.shortlisted / applications.length) * 100)
+                        : 0
                 },
                 applications: applications.map(a => ({
                     id: a._id,

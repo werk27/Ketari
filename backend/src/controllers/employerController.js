@@ -6,6 +6,8 @@ const Job = require('../models/Job');
 const Application = require('../models/Application');
 const { HR_ROLES, EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
 const { PRIVATE_PATHS, toPublicPath, toAbsolutePath } = require('../config/paths');
+const notificationService = require('../services/notificationService');
+const emailService = require('../services/emailService');
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
 
@@ -94,9 +96,14 @@ exports.getEmployerPublicProfile = async (req, res) => {
 // @access  Private (Employer owner)
 exports.getTeam = async (req, res) => {
     try {
+        // HR_ROLES (hr_expert, hr_manager) only - not EMPLOYER_MANAGEABLE_ROLES,
+        // which also includes 'employee' for account-creation validation
+        // elsewhere. Using that broader list here pulled every hired,
+        // activated employee into the "HR Team" roster alongside actual HR
+        // staff, mislabeling plain employees as HR Expert in the UI.
         const team = await User.find({
             employer: req.employerId,
-            role: { $in: [...EMPLOYER_MANAGEABLE_ROLES, 'employer'] }
+            role: { $in: [...HR_ROLES, 'employer'] }
         }).select('name email role status department jobTitle createdAt');
 
         res.status(200).json({ success: true, count: team.length, team });
@@ -431,6 +438,39 @@ exports.setEmployerStatus = async (req, res) => {
         }
         await employer.save();
 
+        if (employer.owner && ['active', 'rejected', 'suspended'].includes(status)) {
+            const resultMessage = {
+                active: `Congratulations - ${employer.name} has been verified and is now active.`,
+                rejected: `${employer.name}'s verification was not approved.${employer.rejectionReason ? ` Reason: ${employer.rejectionReason}` : ''}`,
+                suspended: `${employer.name} has been suspended.${employer.rejectionReason ? ` Reason: ${employer.rejectionReason}` : ''}`
+            }[status];
+
+            await notificationService.notify({
+                user: employer.owner,
+                employer: employer._id,
+                type: 'account_update',
+                title: 'Organization verification result',
+                message: resultMessage,
+                link: '/employer/verification'
+            });
+
+            // Email is best effort - the in-app notification above always reaches the owner.
+            try {
+                const owner = await User.findById(employer.owner).select('name email');
+                if (owner) {
+                    await emailService.sendEmployerVerificationResult({
+                        to: owner.email,
+                        name: owner.name,
+                        organizationName: employer.name,
+                        status,
+                        reason: employer.rejectionReason
+                    });
+                }
+            } catch (emailError) {
+                console.error('Employer verification result email failed:', emailError.message);
+            }
+        }
+
         res.status(200).json({ success: true, message: `Organization marked ${status}`, employer });
     } catch (error) {
         console.error(error);
@@ -672,6 +712,14 @@ exports.submitForVerification = async (req, res) => {
         employer.submittedForReviewAt = new Date();
         employer.rejectionReason = '';
         await employer.save();
+
+        await notificationService.notifyAdmins({
+            employer: employer._id,
+            type: 'employer_registered',
+            title: 'Organization verification required',
+            message: `${employer.name} submitted their organization for verification.`,
+            link: '/admin/employers'
+        });
 
         res.status(200).json({
             success: true,

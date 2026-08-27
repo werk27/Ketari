@@ -123,7 +123,8 @@ const AdminDashboard = () => {
 
     /* ── Design Tokens ── */
     const T = {
-        primary: '#4F46E5', secondary: '#3B82F6', success: '#10B981',
+        // Matches the platform's single brand color (index.css --primary-color).
+        primary: '#0F6B4F', secondary: '#3B82F6', success: '#10B981',
         warning: '#F59E0B', danger: '#EF4444',
         cardRadius: '16px',
         cardShadow: '0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06)',
@@ -238,11 +239,11 @@ const AdminDashboard = () => {
                                                 </div>
                                                 <small className="text-success fw-semibold d-block mt-1">{stats.hrExpertsActive} Active</small>
                                             </div>
-                                            <div className="rounded-circle d-flex align-items-center justify-content-center" style={{ width: '36px', height: '36px', background: '#EEF2FF' }}>
+                                            <div className="rounded-circle d-flex align-items-center justify-content-center" style={{ width: '36px', height: '36px', background: '#E6F4EF' }}>
                                                 <FaUsers size={15} style={{ color: T.primary }} />
                                             </div>
                                         </div>
-                                        <ProgressBar now={Math.round((stats.hrExpertsActive / Math.max(stats.hrExpertsCount, 1)) * 100)} style={{ height: '5px', background: '#EEF2FF' }} className="rounded-pill mb-2" />
+                                        <ProgressBar now={Math.round((stats.hrExpertsActive / Math.max(stats.hrExpertsCount, 1)) * 100)} style={{ height: '5px', background: '#E6F4EF' }} className="rounded-pill mb-2" />
                                         <p className="text-muted mb-3" style={{ fontSize: '0.72rem', lineHeight: 1.4 }}>
                                             Responsible for recording and managing recruitment activities.
                                         </p>
@@ -289,7 +290,7 @@ const AdminDashboard = () => {
                         <Card.Body className="p-3">
                             <div className="d-flex flex-column gap-2">
                                 {[
-                                    { emoji: '📄', label: 'Applications', val: stats.pipeline.applications, bg: '#EEF2FF', color: T.primary },
+                                    { emoji: '📄', label: 'Applications', val: stats.pipeline.applications, bg: '#E6F4EF', color: T.primary },
                                     { emoji: '📂', label: 'Under Review', val: stats.pipeline.underReview, bg: '#FEF3C7', color: T.warning },
                                     { emoji: '🤖', label: 'AI Analyzed', val: stats.pipeline.aiAnalyzed, bg: '#F3E8FF', color: '#8B5CF6' },
                                     { emoji: '⭐', label: 'Shortlisted', val: stats.pipeline.shortlisted, bg: '#D1FAE5', color: T.success },
@@ -420,7 +421,7 @@ const AdminDashboard = () => {
                         <Card.Body className="p-3">
                             <div className="d-flex flex-column gap-2">
                                 {[
-                                    { emoji: '🛡️', title: 'System Administrator', desc: 'Controls users, roles, permissions, configuration and system settings.', bg: '#EEF2FF', color: '#3730A3', iconBg: T.primary },
+                                    { emoji: '🛡️', title: 'System Administrator', desc: 'Controls users, roles, permissions, configuration and system settings.', bg: '#E6F4EF', color: '#094734', iconBg: T.primary },
                                     { emoji: '👨‍💼', title: 'HR Expert', desc: 'Records and manages recruitment data including vacancies, applications, and candidate information.', bg: '#EFF6FF', color: '#1E40AF', iconBg: T.secondary },
                                     { emoji: '👔', title: 'HR Manager', desc: 'Reviews and approves recruitment activities and monitors recruitment performance.', bg: '#FEF3C7', color: '#92400E', iconBg: T.warning },
                                     { emoji: '👤', title: 'Candidate', desc: 'Searches jobs, applies, and manages own applications and profile.', bg: '#D1FAE5', color: '#065F46', iconBg: T.success },

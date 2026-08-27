@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Button, Form, Modal } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { FaCheck, FaTimes, FaArrowLeft } from 'react-icons/fa';
-import api from '../../services/api';
+import api, { formatSalary } from '../../services/api';
 import { Card, SectionHeader, StatusBadge, LoadingState, ErrorState } from '../workspace/ui';
 
 const Detail = ({ label, value }) => (
@@ -90,9 +90,7 @@ const VacancyReview = () => {
     if (!job) return null;
 
     const pending = job.status === 'pending_approval';
-    const salary = job.salary?.min || job.salary?.max
-        ? `${job.salary.min || 0} – ${job.salary.max || 0} ${job.salary.currency || ''}`
-        : null;
+    const salary = job.salary?.amount ? formatSalary(job.salary) : null;
 
     return (
         <div>
@@ -197,7 +195,7 @@ const VacancyReview = () => {
                         <Detail label="Employment type" value={job.employmentType} />
                         <Detail label="Work mode" value={job.workMode} />
                         <Detail label="Openings" value={job.numberOfPositions} />
-                        <Detail label="Salary range" value={salary} />
+                        <Detail label="Salary" value={salary} />
                         <Detail label="Application deadline"
                                 value={job.applicationDeadline
                                     ? new Date(job.applicationDeadline).toLocaleDateString()

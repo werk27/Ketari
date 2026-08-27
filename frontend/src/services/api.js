@@ -98,4 +98,45 @@ export const getImageUrl = (path) => {
     return url;
 };
 
+const SALARY_PERIOD_LABELS = {
+    hourly: '/hour',
+    daily: '/day',
+    weekly: '/week',
+    monthly: '/month',
+    annual: '/year'
+};
+
+/**
+ * Format a vacancy's one fixed salary consistently everywhere it is shown -
+ * job details, candidate application, employer dashboard, search results.
+ * A job always has exactly one required amount (never a range, never
+ * "negotiable" - see Job.salary in the backend model), so this never needs
+ * to handle a min/max shape.
+ */
+export const formatSalary = (salary) => {
+    if (!salary || !salary.amount) return 'Not specified';
+    const amount = Number(salary.amount).toLocaleString();
+    const period = SALARY_PERIOD_LABELS[salary.period] || '/month';
+    return `${salary.currency || 'ETB'} ${amount}${period}`;
+};
+
+/**
+ * Open a file served by an authenticated, non-public route (a candidate's CV,
+ * an employer's verification document, ...) in a new tab.
+ *
+ * These routes require the caller's Bearer token, which a plain `<a href>` or
+ * `window.open(url)` never sends - the browser's own navigation request has no
+ * Authorization header, so it always came back 401 and looked like the file
+ * had simply vanished. Fetching it through the `api` instance (which does
+ * attach the token) and handing the browser a local blob URL instead is what
+ * actually renders the file.
+ */
+export const openAuthenticatedFile = async (path) => {
+    const res = await api.get(path, { responseType: 'blob' });
+    const blobUrl = URL.createObjectURL(
+        new Blob([res.data], { type: res.headers['content-type'] || 'application/octet-stream' })
+    );
+    window.open(blobUrl, '_blank', 'noopener,noreferrer');
+};
+
 export default api;

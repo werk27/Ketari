@@ -159,16 +159,16 @@ const Register = () => {
                                                     onClick={() => setFormData({ ...formData, role: 'candidate' })}
                                                     style={{
                                                         padding: '1rem',
-                                                        border: `2px solid ${formData.role === 'candidate' ? '#4F46E5' : '#E2E8F0'}`,
+                                                        border: `2px solid ${formData.role === 'candidate' ? '#0F6B4F' : '#E2E8F0'}`,
                                                         borderRadius: '12px',
                                                         cursor: 'pointer',
                                                         flex: 1,
                                                         textAlign: 'center',
-                                                        background: formData.role === 'candidate' ? '#EEF2FF' : '#fff',
+                                                        background: formData.role === 'candidate' ? '#E6F4EF' : '#fff',
                                                         transition: 'all 0.2s ease'
                                                     }}
                                                 >
-                                                    <FaUser size={24} color={formData.role === 'candidate' ? '#4F46E5' : '#64748B'} className="mb-2" />
+                                                    <FaUser size={24} color={formData.role === 'candidate' ? '#0F6B4F' : '#64748B'} className="mb-2" />
                                                     <h6 className={`mb-0 ${formData.role === 'candidate' ? 'text-primary fw-bold' : 'text-muted'}`}>I'm a Candidate</h6>
                                                     <small className="text-muted d-block mt-1">Looking for work</small>
                                                 </div>
@@ -177,16 +177,16 @@ const Register = () => {
                                                     onClick={() => setFormData({ ...formData, role: 'employer' })}
                                                     style={{
                                                         padding: '1rem',
-                                                        border: `2px solid ${formData.role === 'employer' ? '#4F46E5' : '#E2E8F0'}`,
+                                                        border: `2px solid ${formData.role === 'employer' ? '#0F6B4F' : '#E2E8F0'}`,
                                                         borderRadius: '12px',
                                                         cursor: 'pointer',
                                                         flex: 1,
                                                         textAlign: 'center',
-                                                        background: formData.role === 'employer' ? '#EEF2FF' : '#fff',
+                                                        background: formData.role === 'employer' ? '#E6F4EF' : '#fff',
                                                         transition: 'all 0.2s ease'
                                                     }}
                                                 >
-                                                    <FaBuilding size={24} color={formData.role === 'employer' ? '#4F46E5' : '#64748B'} className="mb-2" />
+                                                    <FaBuilding size={24} color={formData.role === 'employer' ? '#0F6B4F' : '#64748B'} className="mb-2" />
                                                     <h6 className={`mb-0 ${formData.role === 'employer' ? 'text-primary fw-bold' : 'text-muted'}`}>I'm an Employer</h6>
                                                     <small className="text-muted d-block mt-1">Hiring talent</small>
                                                 </div>

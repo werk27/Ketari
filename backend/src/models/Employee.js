@@ -167,7 +167,7 @@ const EmployeeSchema = new mongoose.Schema({
     employmentHistory: [{
         type: {
             type: String,
-            enum: ['hired', 'promotion', 'transfer', 'status_change', 'other'],
+            enum: ['hired', 'promotion', 'transfer', 'status_change', 'role_change', 'account_change', 'other'],
             default: 'other'
         },
         jobTitle: { type: String, default: '' },

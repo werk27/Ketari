@@ -367,7 +367,7 @@ const Dashboard = () => {
                                                             ) : (
                                                                 <Button
                                                                     as={Link}
-                                                                    to={app.job?._id ? `/jobs/${app.job._id}` : '/jobs'}
+                                                                    to={app.job?._id ? `/candidate/apply/${app.job._id}` : '/jobs'}
                                                                     variant="light"
                                                                     size="sm"
                                                                     className="py-1 px-2 text-muted border border-1 rounded-2"
@@ -416,7 +416,7 @@ const Dashboard = () => {
                                                     </div>
                                                     <Button 
                                                         as={Link} 
-                                                        to={`/jobs/${job._id}`} 
+                                                        to={`/candidate/apply/${job._id}`} 
                                                         variant="outline-primary" 
                                                         size="sm"
                                                         className="align-self-start align-self-sm-center rounded-3 fw-semibold flex-shrink-0"

@@ -1,5 +1,6 @@
 const EmployeeRequest = require('../models/EmployeeRequest');
 const Employee = require('../models/Employee');
+const notificationService = require('../services/notificationService');
 
 /**
  * Employee Requests (break-year, resignation, transfer, termination, promotion).
@@ -93,6 +94,15 @@ exports.createRequest = async (req, res) => {
         recordHistory(request, 'submitted', req.user.id, 'Request submitted');
         await request.save();
 
+        await notificationService.notifyRoles({
+            employer: employee.employer,
+            roles: ['hr_expert'],
+            type: 'request_submitted',
+            title: 'New employee request',
+            message: `${req.user.name} submitted a ${type.replace('_', ' ')} request: ${title}.`,
+            link: '/hr-expert/requests'
+        });
+
         res.status(201).json({ success: true, data: request });
     } catch (error) {
         console.error('Create Request Error:', error);
@@ -162,6 +172,15 @@ exports.processRequest = async (req, res) => {
         recordHistory(request, 'processing', req.user.id, req.body.note || 'Forwarded for approval');
         await request.save();
 
+        await notificationService.notifyRoles({
+            employer: request.employer,
+            roles: ['hr_manager'],
+            type: 'request_submitted',
+            title: 'Employee request awaiting approval',
+            message: `"${request.title}" needs your approval.`,
+            link: '/hr-manager/requests'
+        });
+
         res.status(200).json({
             success: true,
             message: 'Request forwarded for HR Manager approval',
@@ -227,6 +246,19 @@ exports.decideRequest = async (req, res) => {
         request.decisionReason = reason || '';
         recordHistory(request, outcome, req.user.id, reason || `Request ${outcome}`);
         await request.save();
+
+        if (request.raisedBy) {
+            await notificationService.notify({
+                user: request.raisedBy,
+                employer: request.employer,
+                type: 'request_decision',
+                title: outcome === 'approved' ? 'Request approved' : 'Request rejected',
+                message: outcome === 'approved'
+                    ? `Your request "${request.title}" was approved.`
+                    : `Your request "${request.title}" was rejected.${reason ? ` Reason: ${reason}` : ''}`,
+                link: '/employee/dashboard'
+            });
+        }
 
         res.status(200).json({ success: true, message: `Request ${outcome}`, data: request });
     } catch (error) {

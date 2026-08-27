@@ -338,7 +338,7 @@ const ConfigManager = () => {
                             {renderList(
                                 config?.positionRanks,
                                 'positionRanks',
-                                ['name', 'level', 'minSalary'],
+                                ['name', 'level', 'salary'],
                                 'Position Ranks'
                             )}
                         </Tab>
@@ -394,6 +394,24 @@ const ConfigManager = () => {
                                 />
                             </Form.Group>
                             <Form.Group className="mb-3">
+                                <Form.Label>Department *</Form.Label>
+                                <Form.Select
+                                    value={newItem.department || ''}
+                                    onChange={(e) => setNewItem({...newItem, department: e.target.value})}
+                                    required
+                                >
+                                    <option value="">Select a department…</option>
+                                    {(config?.departments || []).map(d => (
+                                        <option key={d._id} value={d._id}>{d.name}</option>
+                                    ))}
+                                </Form.Select>
+                                {(!config?.departments || config.departments.length === 0) && (
+                                    <Form.Text className="text-danger">
+                                        Add a department first - a position must belong to one.
+                                    </Form.Text>
+                                )}
+                            </Form.Group>
+                            <Form.Group className="mb-3">
                                 <Form.Label>Code</Form.Label>
                                 <Form.Control
                                     type="text"
@@ -402,12 +420,16 @@ const ConfigManager = () => {
                                 />
                             </Form.Group>
                             <Form.Group className="mb-3">
-                                <Form.Label>Rank</Form.Label>
-                                <Form.Control
-                                    type="text"
+                                <Form.Label>Position Rank</Form.Label>
+                                <Form.Select
                                     value={newItem.rank || ''}
                                     onChange={(e) => setNewItem({...newItem, rank: e.target.value})}
-                                />
+                                >
+                                    <option value="">No rank</option>
+                                    {(config?.positionRanks || []).map(r => (
+                                        <option key={r._id} value={r._id}>{r.name}</option>
+                                    ))}
+                                </Form.Select>
                             </Form.Group>
                         </>
                     )}
@@ -951,19 +973,12 @@ const ConfigManager = () => {
                                 />
                             </Form.Group>
                             <Form.Group className="mb-3">
-                                <Form.Label>Min Salary</Form.Label>
+                                <Form.Label>Salary (fixed amount, not a range)</Form.Label>
                                 <Form.Control
                                     type="number"
-                                    value={newItem.minSalary || ''}
-                                    onChange={(e) => setNewItem({...newItem, minSalary: parseFloat(e.target.value)})}
-                                />
-                            </Form.Group>
-                            <Form.Group className="mb-3">
-                                <Form.Label>Max Salary</Form.Label>
-                                <Form.Control
-                                    type="number"
-                                    value={newItem.maxSalary || ''}
-                                    onChange={(e) => setNewItem({...newItem, maxSalary: parseFloat(e.target.value)})}
+                                    min="1"
+                                    value={newItem.salary || ''}
+                                    onChange={(e) => setNewItem({...newItem, salary: parseFloat(e.target.value)})}
                                 />
                             </Form.Group>
                             <Form.Group className="mb-3">

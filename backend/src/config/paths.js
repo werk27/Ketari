@@ -38,7 +38,12 @@ const UPLOAD_PATHS = {
 
 const PRIVATE_PATHS = {
     root: PRIVATE_ROOT,
-    verification: path.join(PRIVATE_ROOT, 'verification')
+    verification: path.join(PRIVATE_ROOT, 'verification'),
+    // A CV identifies a real person and must only reach the candidate
+    // themselves or an HR user whose organization the candidate applied to
+    // (see resumeController.viewResumeFile). It cannot live under
+    // UPLOADS_ROOT, which app.js serves statically with no authentication.
+    resumes: path.join(PRIVATE_ROOT, 'resumes')
 };
 
 /** Create every upload directory if it does not already exist. */

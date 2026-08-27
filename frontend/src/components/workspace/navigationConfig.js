@@ -32,11 +32,13 @@ export const NAVIGATION = {
             {
                 label: 'Recruitment',
                 items: [
+                    { to: '/hr-expert/requisitions', label: 'Job Requisitions', icon: FaClipboardList },
                     { to: '/hr-expert/job-creator', label: 'Job Creator', icon: FaPlusCircle },
                     { to: '/hr-expert/vacancies', label: 'My Vacancies', icon: FaBriefcase },
                     { to: '/hr-expert/applications', label: 'Applications', icon: FaFileAlt },
                     { to: '/hr-expert/candidates', label: 'Candidates', icon: FaUsers },
-                    { to: '/hr-expert/ai-matching', label: 'AI Matching', icon: FaRobot }
+                    { to: '/hr-expert/ai-matching', label: 'AI Matching', icon: FaRobot },
+                    { to: '/hr-expert/reports', label: 'Recruitment Report', icon: FaChartBar }
                 ]
             },
             {
@@ -47,7 +49,8 @@ export const NAVIGATION = {
                     { to: '/hr-expert/leave', label: 'Leave', icon: FaCalendarAlt },
                     { to: '/hr-expert/requests', label: 'Employee Requests', icon: FaClipboardList },
                     { to: '/hr-expert/training', label: 'Training', icon: FaGraduationCap },
-                    { to: '/hr-expert/complaints', label: 'Complaints', icon: FaComments }
+                    { to: '/hr-expert/complaints', label: 'Complaints', icon: FaComments },
+                    { to: '/hr-expert/delegation', label: 'Delegation', icon: FaExchangeAlt }
                 ]
             },
             {
@@ -73,6 +76,7 @@ export const NAVIGATION = {
             {
                 label: 'Approvals',
                 items: [
+                    { to: '/hr-manager/requisitions', label: 'Job Requisitions', icon: FaClipboardList },
                     { to: '/hr-manager/vacancy-approvals', label: 'Vacancy Approvals', icon: FaClipboardCheck },
                     { to: '/hr-manager/shortlists', label: 'Hiring Decisions', icon: FaUserCheck },
                     { to: '/hr-manager/leave', label: 'Leave Approvals', icon: FaCalendarAlt },
@@ -85,6 +89,7 @@ export const NAVIGATION = {
                 items: [
                     { to: '/hr-manager/vacancies', label: 'Vacancies', icon: FaBriefcase },
                     { to: '/hr-manager/applications', label: 'Applications', icon: FaFileAlt },
+                    { to: '/hr-manager/reports', label: 'Recruitment Report', icon: FaChartBar },
                     { to: '/hr-manager/candidates', label: 'Candidates', icon: FaUsers },
                     { to: '/hr-manager/employees', label: 'Employees', icon: FaUserFriends },
                     { to: '/hr-manager/onboarding', label: 'Onboarding', icon: FaUserCheck },
@@ -128,12 +133,14 @@ export const NAVIGATION = {
                     { to: '/employer/leave', label: 'Leave', icon: FaCalendarAlt },
                     { to: '/employer/requests', label: 'Employee Requests', icon: FaClipboardList },
                     { to: '/employer/training', label: 'Training', icon: FaGraduationCap },
-                    { to: '/employer/complaints', label: 'Complaints', icon: FaComments }
+                    { to: '/employer/complaints', label: 'Complaints', icon: FaComments },
+                    { to: '/employer/delegation', label: 'Delegation', icon: FaExchangeAlt }
                 ]
             },
             {
                 label: 'Recruitment',
                 items: [
+                    { to: '/employer/requisitions', label: 'Job Requisitions', icon: FaClipboardList },
                     { to: '/employer/vacancies', label: 'Vacancies', icon: FaBriefcase },
                     { to: '/employer/applications', label: 'Applications', icon: FaFileAlt }
                 ]
@@ -190,7 +197,8 @@ export const NAVIGATION = {
                 items: [
                     { to: '/employee/onboarding', label: 'Complete My Profile', icon: FaUserCheck },
                     { to: '/employee/profile', label: 'My Profile', icon: FaUsers },
-                    { to: '/employee/complaints', label: 'Complaints & Feedback', icon: FaComments }
+                    { to: '/employee/complaints', label: 'Complaints & Feedback', icon: FaComments },
+                    { to: '/employee/delegation', label: 'My Delegations', icon: FaExchangeAlt }
                 ]
             },
             {
@@ -228,6 +236,25 @@ export const NAVIGATION = {
     }
 };
 
+/**
+ * Extra navigation an employee gains by heading a department.
+ *
+ * A Department Head is not a role - they keep the whole employee workspace and
+ * gain a department section on top of it. Anything HR Expert or HR Manager
+ * specific is deliberately absent: these are read-only department views plus
+ * the one thing a head actually originates, a Job Requisition.
+ */
+const DEPARTMENT_HEAD_SECTION = {
+    label: 'My Department',
+    items: [
+        { to: '/employee/department', label: 'Department Dashboard', icon: FaChartBar, end: true },
+        { to: '/employee/department/profile', label: 'My Department', icon: FaBuilding },
+        { to: '/employee/department/employees', label: 'Department Employees', icon: FaUserFriends },
+        { to: '/employee/requisitions', label: 'Job Requisitions', icon: FaClipboardList },
+        { to: '/employee/recruitment', label: 'Recruitment Status', icon: FaClipboardCheck }
+    ]
+};
+
 export const ROLE_LABELS = {
     admin: 'System Administrator',
     employer: 'Employer',
@@ -237,4 +264,66 @@ export const ROLE_LABELS = {
     candidate: 'Candidate'
 };
 
-export const getNavigation = (role) => NAVIGATION[role] || null;
+/**
+ * How a signed-in member should be introduced inside their organization.
+ *
+ * `role` only decides which workspace someone gets, so on its own it presented
+ * everybody as a bare "Employee" - it never said what they actually do there.
+ * The position (from their employee record / the organization's configured
+ * Position) and the departments they head come from `user.employment`, built
+ * by the backend auth payload.
+ */
+export const describeEmployment = (user) => {
+    const roleLabel = ROLE_LABELS[user?.role] || user?.role || '';
+    const employment = user?.employment || null;
+    const headOf = (employment?.headOfDepartments || []).map(d => d.name).filter(Boolean);
+    const isDepartmentHead = !!employment?.isDepartmentHead && headOf.length > 0;
+
+    // A Department Head outranks a generic position title: it is the standing
+    // that decides what they may do (raise Job Requisitions for that
+    // department), so it leads. Otherwise their position, and only when the
+    // organization holds neither do we fall back to the account role.
+    const title = isDepartmentHead
+        ? `Head of ${headOf.join(', ')}`
+        : (employment?.jobTitle || roleLabel);
+
+    // Never repeat the department when it is already named in the title.
+    const department = isDepartmentHead ? '' : (employment?.departmentName || '');
+
+    return {
+        roleLabel,
+        title,
+        department,
+        isDepartmentHead,
+        headOf,
+        // Their position still matters when the head badge took the title.
+        positionTitle: employment?.jobTitle || '',
+        employeeId: employment?.employeeId || '',
+        subtitle: [title, department].filter(Boolean).join(' · ')
+    };
+};
+
+/**
+ * The navigation for a signed-in user.
+ *
+ * Takes the whole user, not just the role, because one employee account can
+ * carry an extra responsibility - heading a department - that changes what
+ * they should see. `getNavigation(role)` still works for callers that only
+ * have a role string.
+ */
+export const getNavigation = (userOrRole) => {
+    const user = typeof userOrRole === 'string' ? { role: userOrRole } : (userOrRole || {});
+    const base = NAVIGATION[user.role] || null;
+    if (!base) return null;
+
+    if (user.role !== 'employee' || !user.employment?.isDepartmentHead) return base;
+
+    // The department section leads: for a head this is the reason they open
+    // the workspace, and their own HR services stay exactly where they were.
+    const [overview, ...rest] = base.sections;
+    return {
+        ...base,
+        subtitle: 'Employee & Department Head',
+        sections: [overview, DEPARTMENT_HEAD_SECTION, ...rest]
+    };
+};

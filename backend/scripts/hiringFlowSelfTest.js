@@ -117,7 +117,8 @@ const cleanup = async () => {
             location: 'Hawassa',
             applicationDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
             requiredSkills: ['javascript'],
-            experienceRequired: 0
+            experienceRequired: 0,
+            salary: { amount: 20000, currency: 'ETB', period: 'monthly' }
         }
     });
     check('HR Expert can create a vacancy', [200, 201].includes(jobRes.status), jobRes);
