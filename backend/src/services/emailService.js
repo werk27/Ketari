@@ -11,6 +11,20 @@
  * nodemailer is loaded defensively for the same reason: this module previously
  * required it at the top level while the package was not installed, which is
  * why nothing imported it - doing so would have stopped the server booting.
+ *
+ * Configuration is entirely environment-driven (never hard-coded to one
+ * provider):
+ *   EMAIL_ENABLED   - master switch; 'false' disables mail even if the rest
+ *                      of the variables below are present.
+ *   EMAIL_HOST/PORT - generic SMTP transport (any provider). When set, this
+ *                      is used instead of the "service" shorthand below.
+ *   EMAIL_SERVICE   - nodemailer's named-service shorthand (e.g. 'gmail'),
+ *                      used only when EMAIL_HOST is not set. Kept for
+ *                      backward compatibility with the existing setup.
+ *   EMAIL_USER/PASSWORD - SMTP auth, required either way.
+ *   EMAIL_FROM      - the "from" address shown to recipients; falls back to
+ *                      EMAIL_USER so existing deployments need no changes.
+ * None of these are ever sent to the frontend.
  */
 let nodemailer = null;
 try {
@@ -20,20 +34,29 @@ try {
     console.warn('Email disabled: the nodemailer package is not installed.');
 }
 
-const isConfigured = () =>
-    Boolean(nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD);
+const isConfigured = () => {
+    if (String(process.env.EMAIL_ENABLED).toLowerCase() === 'false') return false;
+    return Boolean(nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASSWORD);
+};
 
 let cached = null;
 const getTransporter = () => {
     if (!isConfigured()) return null;
     if (!cached) {
-        cached = nodemailer.createTransport({
-            service: process.env.EMAIL_SERVICE || 'gmail',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASSWORD
-            }
-        });
+        const auth = { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASSWORD };
+        cached = process.env.EMAIL_HOST
+            ? nodemailer.createTransport({
+                host: process.env.EMAIL_HOST,
+                port: Number(process.env.EMAIL_PORT) || 587,
+                // Port 465 is implicitly TLS-from-the-start; every other port
+                // (587, 25, ...) upgrades via STARTTLS instead.
+                secure: Number(process.env.EMAIL_PORT) === 465,
+                auth
+            })
+            : nodemailer.createTransport({
+                service: process.env.EMAIL_SERVICE || 'gmail',
+                auth
+            });
     }
     return cached;
 };
@@ -41,17 +64,20 @@ const getTransporter = () => {
 const deliver = async (mailOptions, label) => {
     const transporter = getTransporter();
     if (!transporter) {
-        console.log(`Email skipped (${label}): EMAIL_USER / EMAIL_PASSWORD are not set.`);
+        console.log(`Email skipped (${label}): email delivery is not configured.`);
         return { sent: false, reason: 'not_configured' };
     }
     try {
-        await transporter.sendMail({ from: process.env.EMAIL_USER, ...mailOptions });
+        await transporter.sendMail({ from: process.env.EMAIL_FROM || process.env.EMAIL_USER, ...mailOptions });
         return { sent: true };
     } catch (error) {
         console.error(`Email failed (${label}): ${error.message}`);
         return { sent: false, reason: error.message };
     }
 };
+
+/** Whether outgoing mail is currently configured - safe to expose (no secrets), used to decide the "send credentials" checkbox default. */
+exports.isEmailEnabled = isConfigured;
 
 const shell = (title, body) => `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -268,3 +294,65 @@ exports.sendEmployerVerificationResult = async ({ to, name, organizationName, st
         `)
     }, 'employer verification result');
 };
+
+/**
+ * Notify an organization member their login account is ready (created, or
+ * given a new organizational role) and how to log in.
+ *
+ * Carries a link to choose their own password, never the Employer-set
+ * temporary one: mailing a password in clear text leaves it sitting
+ * readable in the mailbox indefinitely (the same reasoning already applied
+ * to sendEmployeeActivation above). The employee's account and role already
+ * exist by the time this is sent - this email is informational, never the
+ * thing that grants access.
+ */
+exports.sendAccountCredentials = async ({ to, employeeName, organizationName, role, loginUrl, setPasswordUrl, isNewAccount }) =>
+    deliver({
+        to,
+        subject: isNewAccount
+            ? `Your ${organizationName} account is ready`
+            : `Your role at ${organizationName} has been updated`,
+        html: shell(isNewAccount ? 'Account ready 🎉' : 'Role updated', `
+            <p>Dear <strong>${employeeName}</strong>,</p>
+            <p>${isNewAccount
+                ? `An account has been created for you at <strong>${organizationName}</strong>.`
+                : `Your role at <strong>${organizationName}</strong> has changed.`}</p>
+            <table style="width:100%; border-collapse: collapse; margin: 15px 0;">
+                <tr><td style="padding:4px 0; color:#888;">Organization</td><td style="padding:4px 0;"><strong>${organizationName}</strong></td></tr>
+                <tr><td style="padding:4px 0; color:#888;">Role</td><td style="padding:4px 0;"><strong>${role}</strong></td></tr>
+                <tr><td style="padding:4px 0; color:#888;">Login email</td><td style="padding:4px 0;"><strong>${to}</strong></td></tr>
+            </table>
+            <div style="text-align: center; margin: 25px 0;">
+                <a href="${setPasswordUrl}" style="background: #2c3e8f; color: white; padding: 12px 30px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                    Set up my password
+                </a>
+            </div>
+            <p>This link expires in <strong>7 days</strong>. Use it to choose your own password before signing in for the first time.</p>
+            <p>Once set, sign in any time at <a href="${loginUrl}" style="color:#2c3e8f;">${loginUrl}</a> with the email address above.</p>
+            <p style="color:#888;font-size:12px;">If the button does not work, paste this into your browser:<br>${setPasswordUrl}</p>
+        `)
+    }, 'account credentials');
+
+/**
+ * Notify an existing organization member they have been made a Department
+ * Head.
+ *
+ * Unlike sendAccountCredentials above, this never touches a password or
+ * login token: a Department Head is always an already-active account (the
+ * departments validator in configController only accepts an existing,
+ * active member of the organization), so there is no credential to set up -
+ * only a new responsibility to be informed about.
+ */
+exports.sendDepartmentHeadAssigned = async ({ to, name, organizationName, departmentName, loginUrl }) =>
+    deliver({
+        to,
+        subject: `You are now the Department Head of ${departmentName}`,
+        html: shell('New responsibility 🏢', `
+            <p>Dear <strong>${name}</strong>,</p>
+            <p>You have been assigned as the <strong>Department Head</strong> of
+               <strong>${departmentName}</strong> at <strong>${organizationName}</strong>.</p>
+            <p>As Department Head you may raise Job Requisitions on behalf of this department and
+               review its staffing and recruitment status.</p>
+            <p><a href="${loginUrl}" style="color:#2c3e8f;">Sign in to your account →</a></p>
+        `)
+    }, 'department head assigned');

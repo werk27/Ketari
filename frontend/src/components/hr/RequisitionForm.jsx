@@ -257,6 +257,14 @@ const RequisitionForm = () => {
         const { name, value } = e.target;
         if (name.startsWith('salary.')) {
             setForm(prev => ({ ...prev, salary: { ...prev.salary, [name.split('.')[1]]: value } }));
+        } else if (name === 'department') {
+            const nextPositions = config.positions.filter(p => String(p.department) === String(value));
+            setForm(prev => ({
+                ...prev,
+                department: value,
+                position: '',
+                positionTitle: nextPositions.length > 0 || prev.position ? '' : prev.positionTitle
+            }));
         } else if (name === 'position') {
             const chosen = config.positions.find(p => p._id === value);
             setForm(prev => ({ ...prev, position: value, positionTitle: chosen ? chosen.title : prev.positionTitle }));

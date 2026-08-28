@@ -48,6 +48,15 @@ const DelegationSchema = new mongoose.Schema({
         type: String,
         enum: ['view', 'edit', 'create', 'delete', 'approve']
     }],
+    // Optional scope restricting the capability transfer to specific
+    // capabilities the delegator holds (e.g. 'leave:approve') instead of
+    // their entire role. Empty means a full transfer of every capability
+    // the delegator holds while this delegation is active - see
+    // services/delegationCapabilities.js resolveDelegatedCapabilities.
+    scopedCapabilities: {
+        type: [String],
+        default: []
+    },
     notes: {
         type: String
     },

@@ -269,6 +269,37 @@ a:hover {
 .theme-dark .form-control, .theme-dark .form-select {
     background-color: rgba(0, 0, 0, 0.2);
 }
+/*
+ * Bootstrap's compact/large size modifiers (used throughout dense admin
+ * screens - Configuration, Leave/Delegation management, etc. - via the
+ * "size" prop on react-bootstrap's Form.Control/Form.Select/Button) were
+ * being silently neutralized: the plain ".form-control"/".btn" rules above
+ * load after bootstrap.min.css and share the same selector specificity as
+ * ".form-control-sm"/".btn-sm", so the later rule in the stylesheet (this
+ * one) always won and every "small" field/button rendered at full size
+ * regardless of the size prop - the actual cause of the oversized, loosely
+ * spaced fields on pages that were designed to look compact.
+ */
+.form-control-sm, .form-select-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-sm);
+}
+.form-control-lg, .form-select-lg {
+    padding: 1rem 1.25rem;
+    font-size: 1.05rem;
+    border-radius: var(--radius-lg);
+}
+.btn-sm {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-sm);
+}
+.btn-lg {
+    padding: 0.85rem 1.5rem;
+    font-size: 1.05rem;
+    border-radius: var(--radius-lg);
+}
 .form-label {
     font-weight: 500;
     color: var(--text-secondary);

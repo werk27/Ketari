@@ -82,7 +82,12 @@ const EmployeeSchema = new mongoose.Schema({
         type: { type: String, enum: ['id', 'certificate', 'contract', 'other'], default: 'other' },
         fileUrl: { type: String, default: '' },
         uploadDate: { type: Date, default: Date.now },
-        expiryDate: { type: Date, default: null }
+        expiryDate: { type: Date, default: null },
+        // Last time an expiry reminder was sent for this specific document,
+        // so the scheduled check (documentExpiryCheck.js) re-notifies
+        // periodically instead of on every run once a document is in the
+        // warning window.
+        expiryNotifiedAt: { type: Date, default: null }
     }],
     dependents: [{
         name: { type: String, default: '' },

@@ -258,9 +258,36 @@ exports.getLeaves = async (req, res) => {
         const leaves = await Leave.find(query)
             .populate({ path: 'employee', select: 'employeeId personalInfo user' })
             .populate('approvedBy', 'name')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
-        res.status(200).json({ success: true, count: leaves.length, data: leaves });
+        // Surface how many "Other" leave requests each employee has made this
+        // year, so HR can notice a pattern that likely needs a proper leave
+        // type added to Configuration instead of repeated ad-hoc use of the
+        // generic catch-all.
+        const yearStart = new Date(new Date().getFullYear(), 0, 1);
+        const otherLeaves = await Leave.find({
+            employer: req.employerId,
+            leaveTypeName: { $regex: /^other$/i },
+            status: { $in: [...PENDING_STATUSES, 'approved'] },
+            startDate: { $gte: yearStart }
+        }).select('employee');
+
+        const otherCountByEmployee = new Map();
+        otherLeaves.forEach(l => {
+            const key = l.employee.toString();
+            otherCountByEmployee.set(key, (otherCountByEmployee.get(key) || 0) + 1);
+        });
+
+        const withCounts = leaves.map(leave => {
+            const employeeId = leave.employee && leave.employee._id ? leave.employee._id.toString() : null;
+            return {
+                ...leave,
+                otherLeaveCountThisYear: employeeId ? (otherCountByEmployee.get(employeeId) || 0) : 0
+            };
+        });
+
+        res.status(200).json({ success: true, count: withCounts.length, data: withCounts });
     } catch (error) {
         console.error('Get Leaves Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });

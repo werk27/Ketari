@@ -1,8 +1,10 @@
 const Employee = require('../models/Employee');
 const User = require('../models/User');
+const Employer = require('../models/Employer');
 const { EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
 const auditService = require('../services/auditService');
 const notificationService = require('../services/notificationService');
+const emailService = require('../services/emailService');
 
 /**
  * Employee Information module.
@@ -16,6 +18,53 @@ const notificationService = require('../services/notificationService');
  * role such as hr_expert or hr_manager is only ever granted to the User
  * account already linked to an existing Employee - never created on its own.
  */
+
+const ROLE_LABELS = { employee: 'Employee', hr_expert: 'HR Expert', hr_manager: 'HR Manager', employer: 'Employer' };
+const roleLabel = (role) => ROLE_LABELS[role] || role;
+
+/**
+ * Optional credential-delivery email for a newly created or role-changed
+ * account (see emailService.sendAccountCredentials). Never sends a password:
+ * a reset token is generated on the account so the employee sets their own,
+ * reusing the exact same mechanism the "forgot password" flow already relies
+ * on (User.getResetPasswordToken / the existing resetpassword endpoints) -
+ * no new authentication mechanism is introduced.
+ *
+ * Always returns a status rather than throwing, so a mail failure never
+ * rolls back the account/role change that already succeeded.
+ */
+const deliverAccountCredentials = async ({ account, employerId, isNewAccount }) => {
+    const resetToken = account.getResetPasswordToken();
+    // 7 days, not the 10 minutes a same-session "forgot password" request
+    // gets: this arrives unprompted after an administrative decision and may
+    // sit unread over a weekend (the same reasoning as the employee
+    // activation link elsewhere in this codebase).
+    account.resetPasswordExpire = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    await account.save({ validateBeforeSave: false });
+
+    const organization = await Employer.findById(employerId).select('name');
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    const result = await emailService.sendAccountCredentials({
+        to: account.email,
+        employeeName: account.name,
+        organizationName: organization?.name || 'your organization',
+        role: roleLabel(account.role),
+        loginUrl: `${frontendUrl}/login`,
+        setPasswordUrl: `${frontendUrl}/reset-password/${resetToken}`,
+        isNewAccount
+    });
+
+    return { requested: true, sent: !!result.sent, configured: emailService.isEmailEnabled() };
+};
+
+/** Human-readable addition to a response message describing what happened with the credential email. */
+const emailStatusMessage = (emailResult) => {
+    if (!emailResult || !emailResult.requested) return '';
+    if (emailResult.sent) return ' Login credentials were emailed to the employee.';
+    if (!emailResult.configured) return ' Email delivery is currently unavailable, so no email was sent.';
+    return ' The credential email could not be sent; you can retry with "Resend login credentials".';
+};
 
 /** Generate the next employee number within an organization. */
 const nextEmployeeId = async (employerId) => {
@@ -472,9 +521,18 @@ exports.createEmployeeAccount = async (req, res) => {
             to: role
         });
 
+        // Optional, defaulting to on: an Employer creating an account almost
+        // always wants the new hire to hear about it, but can opt out (e.g.
+        // when credentials are being handed over in person instead).
+        const sendCredentials = req.body.sendCredentials !== false;
+        const emailResult = sendCredentials
+            ? await deliverAccountCredentials({ account: user, employerId: req.employerId, isNewAccount: true })
+            : { requested: false };
+
         res.status(201).json({
             success: true,
-            message: 'Account created and linked to the employee',
+            message: `Account created and linked to the employee.${emailStatusMessage(emailResult)}`,
+            emailStatus: emailResult,
             data: { id: user._id, name: user.name, email: user.email, role: user.role, status: user.status }
         });
     } catch (error) {
@@ -677,13 +735,89 @@ exports.assignEmployeeRole = async (req, res) => {
             message: `Your organizational role is now ${role.replace('_', ' ')}.`
         });
 
+        // Optional, defaulting to on (see createEmployeeAccount above for the
+        // same reasoning). deliverAccountCredentials re-reads account.role,
+        // which was already saved above, so the email reflects the NEW role.
+        const sendCredentials = req.body.sendCredentials !== false;
+        const emailResult = sendCredentials
+            ? await deliverAccountCredentials({ account, employerId: req.employerId, isNewAccount: false })
+            : { requested: false };
+
         res.status(200).json({
             success: true,
-            message: `Role assigned: ${role}`,
+            message: `Role assigned: ${role}.${emailStatusMessage(emailResult)}`,
+            emailStatus: emailResult,
             data: { id: account._id, name: account.name, email: account.email, role: account.role, status: account.status }
         });
     } catch (error) {
         console.error('Assign Employee Role Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Resend an employee's login credentials by email
+// @route   POST /api/employees/:id/account/resend-credentials
+// @access  Private (org:team - the employer)
+//
+// Re-sends the same "set up your password" email createEmployeeAccount /
+// assignEmployeeRole can send, without changing the account's role or any
+// other state - useful when the first email was missed, went to spam, or
+// email delivery was not configured (or failed) at the time.
+exports.resendEmployeeCredentials = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (!employee.user) {
+            return res.status(400).json({
+                success: false,
+                message: 'This employee has no linked user account yet'
+            });
+        }
+
+        const account = await User.findById(employee.user._id || employee.user);
+        if (!account || !account.employer || account.employer.toString() !== req.employerId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: 'This account no longer belongs to your organization'
+            });
+        }
+
+        if (!account.email) {
+            return res.status(400).json({
+                success: false,
+                message: 'This account has no email address on file'
+            });
+        }
+
+        const emailResult = await deliverAccountCredentials({ account, employerId: req.employerId, isNewAccount: false });
+
+        await auditService.record(req, {
+            action: 'employee.credentials_resent',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: `Login credentials resent to ${account.email}`
+        });
+
+        if (!emailResult.sent) {
+            return res.status(200).json({
+                success: true,
+                message: emailResult.configured
+                    ? 'Could not send the email right now. Please try again shortly.'
+                    : 'Email delivery is currently unavailable, so no email was sent.',
+                emailStatus: emailResult
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Login credentials were resent to ${account.email}.`,
+            emailStatus: emailResult
+        });
+    } catch (error) {
+        console.error('Resend Employee Credentials Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };

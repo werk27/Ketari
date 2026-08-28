@@ -73,11 +73,13 @@ const EmployeeDirectory = () => {
 
     const [unlinkedAccounts, setUnlinkedAccounts] = useState([]);
     const [accountMode, setAccountMode] = useState(null); // 'create' | 'link' | null
-    const [accountForm, setAccountForm] = useState({ email: '', password: '', role: 'employee', userId: '' });
+    const [accountForm, setAccountForm] = useState({ email: '', password: '', role: 'employee', userId: '', sendCredentials: true });
     const [accountBusy, setAccountBusy] = useState(false);
 
     const [roleValue, setRoleValue] = useState('employee');
+    const [sendRoleCredentials, setSendRoleCredentials] = useState(true);
     const [roleBusy, setRoleBusy] = useState(false);
+    const [resendBusy, setResendBusy] = useState(false);
 
     const canRecord = can('employee:record');
     const canManageTeam = can('org:team');
@@ -232,6 +234,7 @@ const EmployeeDirectory = () => {
         setProfileId(id);
         setActiveTab(tab);
         setAccountMode(null);
+        setSendRoleCredentials(true);
         setProfileLoading(true);
         try {
             const res = await api.get(`/employees/${id}`);
@@ -256,7 +259,7 @@ const EmployeeDirectory = () => {
     // ---------------------------------------------------------------- account
 
     const openCreateAccount = () => {
-        setAccountForm({ email: profile?.contactInfo?.email || '', password: '', role: 'employee', userId: '' });
+        setAccountForm({ email: profile?.contactInfo?.email || '', password: '', role: 'employee', userId: '', sendCredentials: true });
         setAccountMode('create');
     };
 
@@ -275,10 +278,11 @@ const EmployeeDirectory = () => {
         setAccountBusy(true);
         try {
             if (accountMode === 'create') {
-                await api.post(`/employees/${profileId}/account`, {
-                    email: accountForm.email, password: accountForm.password, role: accountForm.role
+                const res = await api.post(`/employees/${profileId}/account`, {
+                    email: accountForm.email, password: accountForm.password, role: accountForm.role,
+                    sendCredentials: accountForm.sendCredentials
                 });
-                toast.success('Account created and linked');
+                toast.success(res.data.message || 'Account created and linked');
             } else {
                 if (!accountForm.userId) {
                     toast.error('Choose an account to link');
@@ -310,6 +314,18 @@ const EmployeeDirectory = () => {
         }
     };
 
+    const resendCredentials = async () => {
+        setResendBusy(true);
+        try {
+            const res = await api.post(`/employees/${profileId}/account/resend-credentials`);
+            toast.success(res.data.message || 'Login credentials resent');
+        } catch (err) {
+            toast.error(describeApiError(err, 'Could not resend login credentials'));
+        } finally {
+            setResendBusy(false);
+        }
+    };
+
     // ---------------------------------------------------------------- role
 
     const submitRole = async (e) => {
@@ -321,8 +337,8 @@ const EmployeeDirectory = () => {
         if (!window.confirm(`Assign the ${roleLabel(roleValue)} role to ${fullName(profile)}?`)) return;
         setRoleBusy(true);
         try {
-            await api.put(`/employees/${profileId}/role`, { role: roleValue });
-            toast.success(`Role assigned: ${roleLabel(roleValue)}`);
+            const res = await api.put(`/employees/${profileId}/role`, { role: roleValue, sendCredentials: sendRoleCredentials });
+            toast.success(res.data.message || `Role assigned: ${roleLabel(roleValue)}`);
             refreshProfile();
             load();
         } catch (err) {
@@ -758,13 +774,26 @@ const EmployeeDirectory = () => {
                                             </Col>
                                         </Row>
                                         {canManageTeam && (
-                                            <Button
-                                                size="sm"
-                                                variant={profile.user.status === 'active' ? 'outline-danger' : 'outline-success'}
-                                                onClick={toggleAccountStatus}
-                                            >
-                                                {profile.user.status === 'active' ? 'Deactivate account' : 'Activate account'}
-                                            </Button>
+                                            <div className="d-flex gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant={profile.user.status === 'active' ? 'outline-danger' : 'outline-success'}
+                                                    onClick={toggleAccountStatus}
+                                                >
+                                                    {profile.user.status === 'active' ? 'Deactivate account' : 'Activate account'}
+                                                </Button>
+                                                {profile.user.email && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline-secondary"
+                                                        disabled={resendBusy}
+                                                        onClick={resendCredentials}
+                                                        title="Email a fresh secure link so the employee can set/reset their password"
+                                                    >
+                                                        {resendBusy ? 'Sending…' : 'Resend login credentials'}
+                                                    </Button>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 ) : canManageTeam ? (
@@ -797,6 +826,20 @@ const EmployeeDirectory = () => {
                                                                  onChange={e => setAccountForm({ ...accountForm, role: e.target.value })}>
                                                         {ASSIGNABLE_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                                                     </Form.Select>
+                                                </Form.Group>
+                                                <Form.Group className="mb-3">
+                                                    <Form.Check
+                                                        type="checkbox"
+                                                        id="send-credentials-create"
+                                                        label="Send login credentials by email"
+                                                        style={{ fontSize: '0.82rem' }}
+                                                        checked={accountForm.sendCredentials}
+                                                        onChange={e => setAccountForm({ ...accountForm, sendCredentials: e.target.checked })}
+                                                    />
+                                                    <Form.Text className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                                        Emails the employee a secure link to set their own password -
+                                                        the temporary password above is never sent by email.
+                                                    </Form.Text>
                                                 </Form.Group>
                                                 <div className="d-flex gap-2">
                                                     <Button type="submit" size="sm" disabled={accountBusy}>
@@ -871,6 +914,16 @@ const EmployeeDirectory = () => {
                                                     <Form.Text className="text-muted" style={{ fontSize: '0.74rem' }}>
                                                         {ASSIGNABLE_ROLES.find(r => r.value === roleValue)?.hint}
                                                     </Form.Text>
+                                                </Form.Group>
+                                                <Form.Group className="mb-3">
+                                                    <Form.Check
+                                                        type="checkbox"
+                                                        id="send-credentials-role"
+                                                        label="Send login credentials by email"
+                                                        style={{ fontSize: '0.82rem' }}
+                                                        checked={sendRoleCredentials}
+                                                        onChange={e => setSendRoleCredentials(e.target.checked)}
+                                                    />
                                                 </Form.Group>
                                                 <Button type="submit" size="sm" disabled={roleBusy || roleValue === profile.user.role}>
                                                     {roleBusy ? 'Saving…' : 'Assign role'}

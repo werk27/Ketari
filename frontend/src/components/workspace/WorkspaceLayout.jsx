@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { FaBars, FaSignOutAlt, FaTimes } from 'react-icons/fa';
+import { FaBars, FaSignOutAlt, FaTimes, FaExchangeAlt } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { getImageUrl } from '../../services/api';
 import { getNavigation, describeEmployment } from './navigationConfig';
@@ -30,6 +30,39 @@ const T = {
  * never did, which made the same platform look like two different products
  * depending on who was logged in.
  */
+/**
+ * Tells a delegate they currently hold someone else's capabilities and why,
+ * so the extra actions they suddenly see (e.g. an Approve button) aren't a
+ * silent surprise. Purely informational - it doesn't grant anything itself,
+ * it just reflects what the backend already computed (see
+ * delegationCapabilities.js getActiveDelegationsSummary).
+ */
+const DelegationBanner = ({ delegations }) => {
+    if (!delegations || delegations.length === 0) return null;
+
+    return (
+        <div className="d-flex flex-column gap-2 mb-3">
+            {delegations.map(d => {
+                const isScoped = Array.isArray(d.scopedCapabilities) && d.scopedCapabilities.length > 0;
+                return (
+                    <div key={d.id} className="d-flex align-items-start gap-2 p-2 px-3 rounded"
+                         style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#065F46', fontSize: '0.84rem' }}>
+                        <FaExchangeAlt size={13} style={{ marginTop: 3, flexShrink: 0 }} />
+                        <div>
+                            You are covering <strong>{d.delegatorName}</strong>'s responsibility
+                            {d.title ? <> — "{d.title}"</> : null} until{' '}
+                            {new Date(d.endDate).toLocaleDateString()}.{' '}
+                            {isScoped
+                                ? `You temporarily have ${d.scopedCapabilities.length} specific permission(s) from them.`
+                                : 'Their full approval/action capabilities are temporarily available to you.'}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
 const WorkspaceLayout = () => {
     const { user, organization, logout } = useAuth();
     const location = useLocation();
@@ -192,6 +225,7 @@ const WorkspaceLayout = () => {
 
                 <main className="workspace-main flex-grow-1 p-3 p-md-4" style={{ overflowY: 'auto' }}>
                     <div className="workspace-content">
+                        <DelegationBanner delegations={user.activeDelegations} />
                         <Outlet />
                     </div>
                 </main>

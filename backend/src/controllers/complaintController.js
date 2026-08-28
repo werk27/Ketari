@@ -1,5 +1,6 @@
 const Complaint = require('../models/Complaint');
 const Employee = require('../models/Employee');
+const notificationService = require('../services/notificationService');
 
 /**
  * Complaint and feedback management (spec §18).
@@ -124,6 +125,38 @@ exports.createComplaint = async (req, res) => {
             }]
         });
 
+        // Route to whoever can act on it: the organization's HR team for a
+        // scoped complaint, or the platform administrators for feedback with
+        // no owning organization (e.g. a candidate not tied to an employer).
+        // HR Expert and HR Manager sit under different workspace prefixes, so
+        // each needs its own call with its own correct link (a single shared
+        // link would 404 for whichever role it wasn't written for).
+        if (complaint.employer) {
+            await notificationService.notifyRoles({
+                employer: complaint.employer,
+                roles: ['hr_expert'],
+                type: 'complaint_update',
+                title: 'New complaint received',
+                message: `${req.user.name} raised a complaint: "${title}".`,
+                link: '/hr-expert/complaints'
+            });
+            await notificationService.notifyRoles({
+                employer: complaint.employer,
+                roles: ['hr_manager'],
+                type: 'complaint_update',
+                title: 'New complaint received',
+                message: `${req.user.name} raised a complaint: "${title}".`,
+                link: '/hr-manager/complaints'
+            });
+        } else {
+            await notificationService.notifyAdmins({
+                type: 'complaint_update',
+                title: 'New platform feedback received',
+                message: `${req.user.name} raised feedback: "${title}".`,
+                link: '/admin/complaints'
+            });
+        }
+
         res.status(201).json({ success: true, data: complaint });
     } catch (error) {
         console.error('Create Complaint Error:', error);
@@ -193,6 +226,29 @@ exports.getMyComplaints = async (req, res) => {
     }
 };
 
+/** Tell the person who raised a complaint that its status has changed. */
+const notifyComplainant = async (complaint, status) => {
+    if (!complaint.raisedBy) return;
+
+    const STATUS_LABELS = {
+        under_review: 'is now under review',
+        investigating: 'is being investigated',
+        responded: 'has received a response',
+        resolved: 'has been resolved',
+        rejected: 'was not upheld'
+    };
+
+    await notificationService.notify({
+        user: complaint.raisedBy,
+        employer: complaint.employer,
+        type: 'complaint_update',
+        title: 'Your complaint was updated',
+        message: `Your complaint "${complaint.title}" ${STATUS_LABELS[status] || `was updated to ${status}`}.`
+            + (complaint.resolution ? ` Note: ${complaint.resolution}` : ''),
+        link: await notificationService.linkForUser(complaint.raisedBy, 'complaints')
+    });
+};
+
 // @desc    Update complaint status
 // @route   PUT /api/complaints/:id/status
 // @access  Private (complaint:handle)
@@ -221,6 +277,7 @@ exports.updateComplaintStatus = async (req, res) => {
         }
 
         await complaint.save();
+        await notifyComplainant(complaint, status);
 
         res.status(200).json({ success: true, data: complaint });
     } catch (error) {
@@ -257,6 +314,7 @@ exports.updateUnassignedComplaintStatus = async (req, res) => {
         }
 
         await complaint.save();
+        await notifyComplainant(complaint, status);
 
         res.status(200).json({ success: true, data: complaint });
     } catch (error) {

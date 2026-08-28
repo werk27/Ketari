@@ -10,8 +10,49 @@ import {
 
 const EMPTY_FORM = {
     delegate: '', type: 'authority', title: '', description: '',
-    startDate: '', endDate: '', notes: ''
+    startDate: '', endDate: '', notes: '', scopedCapabilities: []
 };
+
+/** Friendly label for a capability key; falls back to the raw key so nothing is ever hidden. */
+const CAPABILITY_LABELS = {
+    'vacancy:create': 'Create vacancies', 'vacancy:edit': 'Edit vacancies',
+    'vacancy:submit': 'Submit vacancies for approval', 'vacancy:approve': 'Approve vacancies',
+    'vacancy:reject': 'Reject vacancies', 'vacancy:delete': 'Delete vacancies',
+    'vacancy:view': 'View vacancies',
+    'application:view': 'View applications', 'application:process': 'Process applications',
+    'application:shortlist': 'Shortlist applications', 'application:decide': 'Decide on applications',
+    'candidate:view': 'View candidates',
+    'interview:schedule': 'Schedule interviews', 'interview:evaluate': 'Evaluate interviews',
+    'interview:review': 'Review interviews',
+    'ai:match': 'Use AI matching',
+    'employee:view': 'View employee records', 'employee:record': 'Create/edit employee records',
+    'employee:delete': 'Terminate employees',
+    'leave:request': 'Request own leave', 'leave:view': 'View leave requests',
+    'leave:process': 'Record/forward leave requests', 'leave:approve': 'Approve or reject leave requests',
+    'request:raise': 'Raise employee requests', 'request:view': 'View employee requests',
+    'request:process': 'Record/forward employee requests', 'request:approve': 'Approve or reject employee requests',
+    'training:view': 'View training records', 'training:record': 'Record training sessions',
+    'training:approve': 'Approve training', 'training:participate': 'Participate in training',
+    'delegation:view': 'View delegations', 'delegation:create': 'Create further delegations',
+    'attendance:self': 'Record own attendance', 'attendance:view': 'View attendance',
+    'attendance:record': 'Record employee attendance',
+    'complaint:raise': 'Raise complaints', 'complaint:view': 'View complaints',
+    'complaint:handle': 'Handle complaints',
+    'document:self': 'Manage own documents', 'document:view': 'View employee documents',
+    'document:manage': 'Manage employee documents',
+    'report:recruitment': 'View recruitment reports', 'report:manager': 'View manager reports',
+    'report:employer': 'View employer reports', 'report:hr': 'View HR reports',
+    'report:system': 'View system reports',
+    'requisition:create': 'Create job requisitions', 'requisition:view': 'View job requisitions',
+    'requisition:process': 'Process job requisitions', 'requisition:approve': 'Approve job requisitions',
+    'org:manage': 'Manage organization settings', 'org:team': 'Manage the HR team',
+    'org:config': 'Manage organization configuration',
+    'platform:employers': 'Manage platform employers', 'platform:users': 'Manage platform users',
+    'platform:roles': 'Manage platform roles', 'platform:config': 'Manage platform configuration',
+    'platform:audit': 'Audit platform activity',
+    'jobseek:apply': 'Apply to jobs', 'jobseek:profile': 'Manage own job-seeker profile'
+};
+const describeCapability = (key) => CAPABILITY_LABELS[key] || key;
 
 /**
  * Delegation of responsibility (spec §15).
@@ -20,7 +61,7 @@ const EMPTY_FORM = {
  * delegator is on leave. Delegations expire automatically at their end date.
  */
 const DelegationManagement = () => {
-    const { can } = useAuth();
+    const { can, user } = useAuth();
     const [delegations, setDelegations] = useState([]);
     const [team, setTeam] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -30,6 +71,11 @@ const DelegationManagement = () => {
     const [saving, setSaving] = useState(false);
 
     const canCreate = can('delegation:create');
+    // What this user could legitimately hand to someone else - never
+    // includes anything they only hold via someone else's delegation (see
+    // authController.buildAuthPayload), so every option shown here is one
+    // the backend will actually accept.
+    const delegableCapabilities = user?.ownCapabilities || [];
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -199,6 +245,35 @@ const DelegationManagement = () => {
                                     <option value="project">Project</option>
                                 </Form.Select>
                             </Col>
+                            {delegableCapabilities.length > 0 && (
+                                <Col md={12}>
+                                    <Form.Label style={{ fontSize: '0.8rem' }}>
+                                        Limit to specific permissions (optional)
+                                    </Form.Label>
+                                    <div className="text-muted mb-1" style={{ fontSize: '0.72rem' }}>
+                                        Leave all unchecked to hand over everything you can currently do.
+                                        Otherwise the delegate only gains the permissions checked below.
+                                    </div>
+                                    <div className="d-flex flex-column gap-1" style={{ maxHeight: 140, overflowY: 'auto' }}>
+                                        {delegableCapabilities.map(capability => (
+                                            <Form.Check
+                                                key={capability}
+                                                type="checkbox"
+                                                id={`scope-${capability}`}
+                                                label={describeCapability(capability)}
+                                                style={{ fontSize: '0.8rem' }}
+                                                checked={form.scopedCapabilities.includes(capability)}
+                                                onChange={e => setForm({
+                                                    ...form,
+                                                    scopedCapabilities: e.target.checked
+                                                        ? [...form.scopedCapabilities, capability]
+                                                        : form.scopedCapabilities.filter(c => c !== capability)
+                                                })}
+                                            />
+                                        ))}
+                                    </div>
+                                </Col>
+                            )}
                             <Col md={6}>
                                 <Form.Label style={{ fontSize: '0.8rem' }}>Start date</Form.Label>
                                 <Form.Control type="date" required value={form.startDate}

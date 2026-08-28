@@ -3,6 +3,9 @@ const Configuration = require('../models/Configuration');
 const Employee = require('../models/Employee');
 const JobRequisition = require('../models/JobRequisition');
 const User = require('../models/User');
+const Employer = require('../models/Employer');
+const emailService = require('../services/emailService');
+const notificationService = require('../services/notificationService');
 
 /**
  * Configuration module (spec §19 / §20).
@@ -392,6 +395,47 @@ const LABELS = {
     'marital-status': 'Marital status', 'blood-types': 'Blood type'
 };
 
+/**
+ * Optionally tell a newly assigned Department Head about their new
+ * responsibility - an in-app notification always, plus an email when
+ * requested (defaults to on, opt-out via body.notifyHead === false).
+ *
+ * Never touches a password or login token: the departments validator above
+ * only ever accepts an existing, active member of the organization as
+ * manager, so there is nothing to "activate" here, only something to
+ * announce. Failures are logged and swallowed - the department/manager
+ * assignment itself has already succeeded by the time this runs and must
+ * never be rolled back by a notification problem.
+ */
+const notifyDepartmentHead = async (req, { managerId, departmentName }) => {
+    try {
+        const manager = await User.findById(managerId).select('name email');
+        if (!manager) return;
+
+        await notificationService.notify({
+            user: manager._id,
+            employer: req.employerId,
+            type: 'account_update',
+            title: 'You are now a Department Head',
+            message: `You have been assigned as the Department Head of "${departmentName}".`,
+            link: await notificationService.linkForUser(manager._id, 'department')
+        });
+
+        if (req.body.notifyHead === false || !manager.email) return;
+
+        const organization = await Employer.findById(req.employerId).select('name');
+        await emailService.sendDepartmentHeadAssigned({
+            to: manager.email,
+            name: manager.name,
+            organizationName: organization?.name || 'your organization',
+            departmentName,
+            loginUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`
+        });
+    } catch (error) {
+        console.error('Department Head notification failed:', error.message);
+    }
+};
+
 // @desc    Add an item to a configuration list
 // @route   POST /api/config/:type
 // @access  Private (org:config / platform:config)
@@ -416,6 +460,10 @@ exports.addConfigEntry = async (req, res) => {
 
         config[field].push(result.value);
         await config.save();
+
+        if (type === 'departments' && result.value.manager) {
+            await notifyDepartmentHead(req, { managerId: result.value.manager, departmentName: result.value.name });
+        }
 
         res.status(201).json({ success: true, data: config });
     } catch (error) {
@@ -458,8 +506,19 @@ exports.updateConfigEntry = async (req, res) => {
             return res.status(400).json({ success: false, message: result.error });
         }
 
+        // Captured before the overwrite so a real change of head can be told
+        // apart from an unrelated edit (renaming the department, toggling its
+        // status) that happens to resubmit the same manager - re-notifying
+        // an unchanged head on every edit would be noise, not news.
+        const previousManagerId = type === 'departments' && item.manager ? item.manager.toString() : null;
+
         Object.assign(item, result.value);
         await config.save();
+
+        if (type === 'departments' && result.value.manager
+            && result.value.manager.toString() !== previousManagerId) {
+            await notifyDepartmentHead(req, { managerId: result.value.manager, departmentName: result.value.name });
+        }
 
         res.status(200).json({ success: true, data: config });
     } catch (error) {

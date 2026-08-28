@@ -2,7 +2,7 @@ const User = require('../models/User');
 const Employer = require('../models/Employer');
 const Employee = require('../models/Employee');
 const { loadConfiguration, headedDepartments } = require('../services/departmentScope');
-const { resolveDelegatedCapabilities } = require('../services/delegationCapabilities');
+const { resolveDelegatedCapabilities, getActiveDelegationsSummary } = require('../services/delegationCapabilities');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { validationResult } = require('express-validator');
@@ -46,6 +46,14 @@ const isDatabaseUnavailable = (error) => (
  */
 const buildAuthPayload = async (user) => {
     const delegated = await resolveDelegatedCapabilities(user);
+    const activeDelegations = await getActiveDelegationsSummary(user);
+    // Intrinsic capabilities only (role + any employer-granted overrides),
+    // deliberately excluding anything currently borrowed via someone else's
+    // delegation. Used by the delegation form to offer only capabilities
+    // this user can legitimately hand further down - matching exactly what
+    // delegationController.createDelegation validates server-side, so a
+    // choice that looks valid in the UI is never rejected by the API.
+    const ownCapabilities = capabilitiesFor(user);
     return {
         id: user._id,
         _id: user._id,
@@ -62,7 +70,11 @@ const buildAuthPayload = async (user) => {
         // inherited via an active delegation, so the frontend's own can()
         // checks (which decide whether to even show an action button) agree
         // with what the backend will actually allow.
-        capabilities: [...new Set([...capabilitiesFor(user), ...delegated])],
+        capabilities: [...new Set([...ownCapabilities, ...delegated])],
+        ownCapabilities,
+        // Display-only: lets the UI show "you're covering X until Y" so the
+        // extra capabilities above aren't a silent surprise to the user.
+        activeDelegations,
         employment: await loadEmployment(user)
     };
 };

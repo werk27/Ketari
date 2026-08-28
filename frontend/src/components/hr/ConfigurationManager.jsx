@@ -86,6 +86,30 @@ const STATUS_OPTIONS = [
 ];
 
 /**
+ * Singular form of a list label for "Add ___"/"Add your first ___" copy.
+ * A plain `/s$/` strip breaks any label that already ends in "s" without
+ * being plural - e.g. "Employment Status" and "Marital Status" became
+ * "...Statu" - so words that are singular despite ending in "s" are listed
+ * here rather than assumed away by the regex.
+ */
+const NOT_PLURAL = new Set(['status']);
+const singularize = (label) => {
+    const lower = label.toLowerCase();
+    if (NOT_PLURAL.has(lower) || [...NOT_PLURAL].some(word => lower.endsWith(` ${word}`))) {
+        return label;
+    }
+    return label.replace(/s$/, '');
+};
+
+/** Friendly placeholder for a secondary list field, instead of the raw camelCase key. */
+const FIELD_PLACEHOLDERS = {
+    category: 'Category', code: 'Code', issuingBody: 'Issuing body', level: 'Level',
+    daysPerYear: 'Days/year', percentage: 'Percentage (%)', abbreviation: 'Abbreviation'
+};
+const fieldPlaceholder = (field) => FIELD_PLACEHOLDERS[field]
+    || field.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+
+/**
  * A full Create / List / Edit / Activate-Deactivate / Delete manager for one
  * organization-structure entity (Department, Position, Position Rank, Job
  * Title or Partner). The form fields themselves and the table columns are the
@@ -271,13 +295,15 @@ const OrganizationStructure = ({ config, meta, onChanged }) => {
                 <EntityManager
                     type="departments" field="departments" label="Department" labelPlural="Departments"
                     items={{ list: departments, onChanged }}
-                    emptyForm={{ name: '', code: '', manager: '', status: 'active' }}
+                    emptyForm={{ name: '', code: '', manager: '', status: 'active', notifyHead: true }}
                     toFormValues={(item) => ({
                         name: item.name, code: item.code || '',
-                        manager: item.manager ? String(item.manager) : '', status: item.status || 'active'
+                        manager: item.manager ? String(item.manager) : '', status: item.status || 'active',
+                        notifyHead: true
                     })}
                     buildPayload={(form) => ({
-                        name: form.name.trim(), code: form.code.trim(), manager: form.manager || undefined, status: form.status
+                        name: form.name.trim(), code: form.code.trim(), manager: form.manager || undefined, status: form.status,
+                        notifyHead: form.notifyHead
                     })}
                     renderFields={({ form, setField }) => (
                         <div className="row g-2">
@@ -291,7 +317,13 @@ const OrganizationStructure = ({ config, meta, onChanged }) => {
                                 <Form.Control size="sm" value={form.code} onChange={e => setField('code', e.target.value)}
                                               placeholder="e.g., IT" />
                             </div>
-                            <div className="col-12 col-md-4">
+                            <div className="col-6 col-md-4">
+                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                </Form.Select>
+                            </div>
+                            <div className="col-12">
                                 <Form.Label style={{ fontSize: '0.75rem' }}>Department Head</Form.Label>
                                 <Form.Select size="sm" value={form.manager} onChange={e => setField('manager', e.target.value)}>
                                     <option value="">Not assigned</option>
@@ -305,12 +337,18 @@ const OrganizationStructure = ({ config, meta, onChanged }) => {
                                     May raise Job Requisitions for this department.
                                 </Form.Text>
                             </div>
-                            <div className="col-6 col-md-3">
-                                <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
-                                <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
-                                    {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-                                </Form.Select>
-                            </div>
+                            {form.manager && (
+                                <div className="col-12">
+                                    <Form.Check
+                                        type="checkbox"
+                                        id="notify-department-head"
+                                        label="Notify department head by email"
+                                        style={{ fontSize: '0.8rem' }}
+                                        checked={form.notifyHead}
+                                        onChange={e => setField('notifyHead', e.target.checked)}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                     columns={[
@@ -621,7 +659,7 @@ const ConfigurationManager = () => {
                                         <Form.Control
                                             size="sm"
                                             value={draft[nameField] || ''}
-                                            placeholder={`Add ${list.label.replace(/s$/, '').toLowerCase()}`}
+                                            placeholder={`Add ${singularize(list.label).toLowerCase()}`}
                                             onChange={e => setDraft(list.type, nameField, e.target.value)}
                                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(list); } }}
                                             style={{ flex: '1 1 140px', fontSize: '0.82rem' }}
@@ -631,7 +669,7 @@ const ConfigurationManager = () => {
                                                 key={field}
                                                 size="sm"
                                                 value={draft[field] || ''}
-                                                placeholder={field}
+                                                placeholder={fieldPlaceholder(field)}
                                                 onChange={e => setDraft(list.type, field, e.target.value)}
                                                 style={{ flex: '0 1 110px', fontSize: '0.82rem' }}
                                             />
@@ -643,7 +681,7 @@ const ConfigurationManager = () => {
 
                                     {items.length === 0 ? (
                                         <EmptyState title="Nothing configured yet"
-                                                    description={`Add your first ${list.label.replace(/s$/, '').toLowerCase()}.`} />
+                                                    description={`Add your first ${singularize(list.label).toLowerCase()}.`} />
                                     ) : (
                                         <div className="d-flex flex-wrap gap-2">
                                             {items.map(item => (

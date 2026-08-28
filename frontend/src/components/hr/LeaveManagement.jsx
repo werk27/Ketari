@@ -137,7 +137,16 @@ const LeaveManagement = () => {
                                                     {leave.employee?.employeeId || '—'}
                                                 </div>
                                             </td>
-                                            <td className="text-muted" style={{ fontSize: '0.82rem' }}>{leave.leaveTypeName}</td>
+                                            <td className="text-muted" style={{ fontSize: '0.82rem' }}>
+                                                {leave.leaveTypeName}
+                                                {leave.leaveTypeName === 'Other' && leave.otherLeaveCountThisYear > 1 && (
+                                                    <div className="text-warning" style={{ fontSize: '0.68rem' }}
+                                                         title="Consider adding a dedicated leave type in Configuration for this employee's recurring need.">
+                                                        ⚠ {leave.otherLeaveCountThisYear}
+                                                        {leave.otherLeaveCountThisYear === 2 ? 'nd' : leave.otherLeaveCountThisYear === 3 ? 'rd' : 'th'} "Other" request this year
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="text-muted" style={{ fontSize: '0.8rem' }}>
                                                 {new Date(leave.startDate).toLocaleDateString()} –{' '}
                                                 {new Date(leave.endDate).toLocaleDateString()}

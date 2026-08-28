@@ -1,6 +1,7 @@
 const Delegation = require('../models/Delegation');
 const User = require('../models/User');
 const notificationService = require('../services/notificationService');
+const { capabilitiesFor } = require('../config/permissions');
 
 /**
  * Delegation of responsibility (spec §15).
@@ -46,7 +47,7 @@ exports.getDelegationCandidates = async (req, res) => {
 // @access  Private (delegation:create)
 exports.createDelegation = async (req, res) => {
     try {
-        const { delegate, type, title, description, startDate, endDate, permissions, notes } = req.body;
+        const { delegate, type, title, description, startDate, endDate, permissions, notes, scopedCapabilities } = req.body;
 
         if (!delegate || !type || !title || !startDate || !endDate) {
             return res.status(400).json({
@@ -88,6 +89,25 @@ exports.createDelegation = async (req, res) => {
             });
         }
 
+        // Optional scope: restrict the transfer to specific capabilities the
+        // delegator holds, rather than their entire role. Validated against
+        // the delegator's own INTRINSIC role/permission capabilities only
+        // (never anything they currently hold via someone else's delegation),
+        // so a chain of re-delegation can't silently extend authority further
+        // than the organization actually granted.
+        let validatedScope = [];
+        if (Array.isArray(scopedCapabilities) && scopedCapabilities.length > 0) {
+            const ownCapabilities = capabilitiesFor({ role: req.user.role, permissions: req.user.permissions });
+            const invalid = scopedCapabilities.filter(c => !ownCapabilities.includes(c));
+            if (invalid.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `You can only delegate capabilities you currently hold. Not held: ${invalid.join(', ')}`
+                });
+            }
+            validatedScope = [...new Set(scopedCapabilities)];
+        }
+
         const delegation = await Delegation.create({
             employer: req.employerId,
             delegator: req.user.id,
@@ -98,6 +118,7 @@ exports.createDelegation = async (req, res) => {
             startDate,
             endDate,
             permissions: permissions || [],
+            scopedCapabilities: validatedScope,
             notes: notes || '',
             // Active immediately when the period has already started.
             status: new Date(startDate) <= new Date() ? 'active' : 'pending'

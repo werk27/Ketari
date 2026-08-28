@@ -8,6 +8,7 @@ require('dotenv').config();
 
 const connectDB = require('./config/database');
 const autoBackup = require('./services/autoBackup');
+const documentExpiryCheck = require('./services/documentExpiryCheck');
 
 // ============================================
 // ROUTE IMPORTS
@@ -314,6 +315,7 @@ app.listen(PORT, () => {
     console.log(`   ✅ Delegations: /api/delegations`);
 
     autoBackup.start();
+    documentExpiryCheck.start();
 });
 
 module.exports = app;

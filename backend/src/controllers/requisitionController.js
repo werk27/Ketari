@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { validationResult } = require('express-validator');
 const JobRequisition = require('../models/JobRequisition');
 const Configuration = require('../models/Configuration');
 const Job = require('../models/Job');
@@ -27,6 +28,11 @@ const ESSENTIAL_FIELDS = [
 
 const recordAudit = (requisition, action, userId, note = '') => {
     requisition.auditTrail.push({ action, by: userId, at: new Date(), note });
+};
+
+const requestValidationErrors = (req) => {
+    const errors = validationResult(req);
+    return errors.isEmpty() ? [] : errors.array();
 };
 
 /** Load a requisition and confirm the caller's organization owns it. */
@@ -99,6 +105,9 @@ const resolveDepartmentAndPosition = async (req, body) => {
     if (!department) {
         return { error: 'Department must be one of your organization\'s configured departments.' };
     }
+    if (department.status === 'inactive') {
+        return { error: 'Department must be one of your organization\'s active departments.' };
+    }
 
     let position = null;
     let positionTitle = (body.positionTitle || '').trim();
@@ -106,6 +115,12 @@ const resolveDepartmentAndPosition = async (req, body) => {
         position = (config.positions || []).id(body.position);
         if (!position) {
             return { error: 'Position must be one of your organization\'s configured positions.' };
+        }
+        if (position.status === 'inactive') {
+            return { error: 'Position must be one of the selected department\'s active positions.' };
+        }
+        if (String(position.department) !== String(department._id)) {
+            return { error: 'Position must belong to the selected department.' };
         }
         positionTitle = position.title;
     }
@@ -149,6 +164,15 @@ const resolveRequisitionAuthorization = (req, departmentManagerId) => {
 // @access  Private (Employer, or the Department Head of the target department)
 exports.createRequisition = async (req, res) => {
     try {
+        const validationErrors = requestValidationErrors(req);
+        if (validationErrors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: validationErrors.map(e => e.msg).join(', '),
+                errors: validationErrors
+            });
+        }
+
         const {
             numberOfPositions, requestType, employmentType, level, education, experience,
             skills, languages, licenses, responsibilities, competencies, startDate,
@@ -190,6 +214,14 @@ exports.createRequisition = async (req, res) => {
             return res.status(400).json({ success: false, message: 'A reason/justification for hiring is required' });
         }
 
+        const headcount = Number(numberOfPositions ?? 1);
+        if (!Number.isInteger(headcount) || headcount < 1) {
+            return res.status(400).json({
+                success: false,
+                message: 'Number of employees required must be at least 1'
+            });
+        }
+
         if (!startDate) {
             return res.status(400).json({ success: false, message: 'A required start date is required' });
         }
@@ -202,7 +234,7 @@ exports.createRequisition = async (req, res) => {
             departmentName: resolved.departmentName,
             position: resolved.position,
             positionTitle: resolved.positionTitle,
-            numberOfPositions: numberOfPositions || 1,
+            numberOfPositions: headcount,
             requestType,
             employmentType: employmentType || 'Full-Time',
             level,
@@ -329,6 +361,15 @@ exports.getRequisition = async (req, res) => {
 // @access  Private (Employer, HR Expert - the requester)
 exports.updateRequisition = async (req, res) => {
     try {
+        const validationErrors = requestValidationErrors(req);
+        if (validationErrors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: validationErrors.map(e => e.msg).join(', '),
+                errors: validationErrors
+            });
+        }
+
         const { requisition, error } = await findScopedRequisition(req.params.id, req);
         if (error) return res.status(error.code).json({ success: false, message: error.message });
 
@@ -487,6 +528,15 @@ exports.returnRequisition = async (req, res) => {
 // resubmission, so the workflow is answered rather than bypassed.
 exports.respondToClarification = async (req, res) => {
     try {
+        const validationErrors = requestValidationErrors(req);
+        if (validationErrors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: validationErrors.map(e => e.msg).join(', '),
+                errors: validationErrors
+            });
+        }
+
         const { response } = req.body;
         if (!response || !response.trim()) {
             return res.status(400).json({ success: false, message: 'Please write a response for HR' });
@@ -676,6 +726,15 @@ exports.decideRequisition = async (req, res) => {
 // @access  Private (HR Expert)
 exports.amendRequisition = async (req, res) => {
     try {
+        const validationErrors = requestValidationErrors(req);
+        if (validationErrors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: validationErrors.map(e => e.msg).join(', '),
+                errors: validationErrors
+            });
+        }
+
         const { requisition, error } = await findScopedRequisition(req.params.id, req);
         if (error) return res.status(error.code).json({ success: false, message: error.message });
 

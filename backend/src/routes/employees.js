@@ -12,7 +12,8 @@ const {
     createEmployeeAccount,
     linkEmployeeAccount,
     setEmployeeAccountStatus,
-    assignEmployeeRole
+    assignEmployeeRole,
+    resendEmployeeCredentials
 } = require('../controllers/employeeController');
 const { protect, can, withEmployerScope, requireActiveEmployer } = require('../middleware/auth');
 const { CAPABILITIES } = require('../config/permissions');
@@ -131,5 +132,10 @@ router.put('/:id/account/status', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), wi
 // @desc    Assign an organizational role to the employee's linked account
 // @access  Private (org:team - the employer)
 router.put('/:id/role', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, requireActiveEmployer, assignEmployeeRole);
+
+// @route   POST /api/employees/:id/account/resend-credentials
+// @desc    Resend the employee's login/credential-setup email
+// @access  Private (org:team - the employer)
+router.post('/:id/account/resend-credentials', protect, can(CAPABILITIES.ORG_TEAM_MANAGE), withEmployerScope, resendEmployeeCredentials);
 
 module.exports = router;

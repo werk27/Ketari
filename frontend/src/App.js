@@ -12,6 +12,7 @@ import Home from './components/Home';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
 import ActivateEmployee from './components/auth/ActivateEmployee';
+import ResetPassword from './components/auth/ResetPassword';
 import JobSearch from './components/candidate/JobSearch';
 import Dashboard from './components/candidate/Dashboard';
 import ApplyJob from './components/candidate/ApplyJob';
@@ -105,6 +106,12 @@ function AppContent() {
                         Public because they are not yet an employee - the link is
                         what grants that. */}
                     <Route path="/activate-employee/:token" element={<ActivateEmployee />} />
+                    {/* Reached from a "forgot password" request, or from the
+                        "set up your account" email an Employer can send when
+                        creating an account or assigning a role. Public for the
+                        same reason as activate-employee above: the link itself
+                        is what proves the request. */}
+                    <Route path="/reset-password/:token" element={<ResetPassword />} />
                     <Route path="/jobs" element={<JobSearch />} />
                     <Route path="/privacy" element={<PrivacyPolicy />} />
                     <Route path="/terms" element={<TermsOfService />} />
