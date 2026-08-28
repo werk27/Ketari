@@ -253,6 +253,16 @@ const RequisitionForm = () => {
         jobTitles: config.jobTitles.map(j => j.name)
     }), [config]);
 
+    // The Position Rank attached to the currently selected Position (if any).
+    // A Rank carries one fixed salary figure, configured once by the Employer,
+    // so the requester doesn't have to know or guess it when raising a
+    // request for a position that already has a defined pay grade.
+    const selectedRank = useMemo(() => {
+        const chosen = config.positions.find(p => p._id === form.position);
+        if (!chosen || !chosen.rank) return null;
+        return config.positionRanks.find(r => r._id === chosen.rank) || null;
+    }, [config.positions, config.positionRanks, form.position]);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name.startsWith('salary.')) {
@@ -267,7 +277,18 @@ const RequisitionForm = () => {
             }));
         } else if (name === 'position') {
             const chosen = config.positions.find(p => p._id === value);
-            setForm(prev => ({ ...prev, position: value, positionTitle: chosen ? chosen.title : prev.positionTitle }));
+            const rank = chosen?.rank ? config.positionRanks.find(r => r._id === chosen.rank) : null;
+            setForm(prev => ({
+                ...prev,
+                position: value,
+                positionTitle: chosen ? chosen.title : prev.positionTitle,
+                // Pre-fill the fixed salary from the position's rank so the
+                // requester isn't left guessing the org's pay grade for it.
+                // Still just a starting point - they can adjust it below.
+                salary: (rank && typeof rank.salary === 'number')
+                    ? { ...prev.salary, amount: rank.salary }
+                    : prev.salary
+            }));
         } else {
             setForm(prev => ({ ...prev, [name]: value }));
         }
@@ -415,7 +436,16 @@ const RequisitionForm = () => {
                                             {positionsForDepartment.length > 0 ? (
                                                 <Form.Select name="position" value={form.position} onChange={handleChange} className="form-control-custom">
                                                     <option value="">Select a position…</option>
-                                                    {positionsForDepartment.map(p => <option key={p._id} value={p._id}>{p.title}</option>)}
+                                                    {positionsForDepartment.map(p => {
+                                                        const rankName = p.rank
+                                                            ? config.positionRanks.find(r => r._id === p.rank)?.name
+                                                            : null;
+                                                        return (
+                                                            <option key={p._id} value={p._id}>
+                                                                {p.title}{rankName ? ` (${rankName})` : ''}
+                                                            </option>
+                                                        );
+                                                    })}
                                                 </Form.Select>
                                             ) : options.jobTitles.length > 0 ? (
                                                 <Form.Select name="positionTitle" value={form.positionTitle} onChange={handleChange}
@@ -537,7 +567,12 @@ const RequisitionForm = () => {
                                             <Form.Label className="fw-semibold">Salary Amount <span className="text-danger">*</span></Form.Label>
                                             <Form.Control type="number" min="1" step="1" name="salary.amount" value={form.salary.amount}
                                                           onChange={handleChange} placeholder="e.g. 25000" className="form-control-custom" required />
-                                            <Form.Text className="text-muted">Fixed amount, not a range.</Form.Text>
+                                            <Form.Text className="text-muted">
+                                                Fixed amount, not a range.
+                                                {selectedRank && typeof selectedRank.salary === 'number' && (
+                                                    <> Pre-filled from the <strong>{selectedRank.name}</strong> rank's configured salary - you may still adjust it.</>
+                                                )}
+                                            </Form.Text>
                                         </Col>
                                         <Col md={4} className="mb-3">
                                             <Form.Label className="fw-semibold">Currency</Form.Label>
