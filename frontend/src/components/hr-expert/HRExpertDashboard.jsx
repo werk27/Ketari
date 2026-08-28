@@ -4,6 +4,7 @@ import {
     FaBriefcase, FaFileAlt, FaListAlt, FaPlusCircle, FaClock, FaExclamationTriangle
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
+import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';

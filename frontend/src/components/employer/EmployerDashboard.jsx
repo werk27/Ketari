@@ -5,6 +5,7 @@ import {
     FaUsers, FaCalendarAlt, FaClipboardList, FaGraduationCap, FaComments, FaPlus
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
+import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -63,9 +64,6 @@ const EmployerDashboard = () => {
 
     return (
         <div>
-            {/* The workspace shell paints the photograph across the top of the
-                page, so the hero only carries the headline and leaves room for
-                the statistics to overlap the lower edge of the band. */}
             <section className="dash-hero">
                 <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
                     <div style={{ minWidth: 0, flex: '1 1 320px' }}>
@@ -101,7 +99,6 @@ const EmployerDashboard = () => {
                 </div>
             </section>
 
-            {/* Workforce, lifted over the photograph */}
             <div className="hero-overlap">
                 <div className="row g-3 mb-4">
                     <div className="col-6 col-lg-3">

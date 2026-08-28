@@ -1,0 +1,71 @@
+/*
+ * Light-themed header ("hero") used at the top of the Employer, HR Manager
+ * and HR Expert dashboards. It shows the organization logo/badge, page
+ * title and a short subtitle, followed by the row of stat cards.
+ *
+ * These dashboards previously sat on a dark photographic backdrop
+ * (workspaceDark.css) and relied on that stylesheet for `.hero-badge`'s
+ * size. That backdrop was removed so every workspace shares one plain
+ * light background, but no replacement sizing was kept for the badge -
+ * so an organization's uploaded logo rendered at its full original
+ * resolution instead of as a small icon. This file gives the badge a
+ * bounded, flexible size (see `.hero-badge img` below for why it isn't a
+ * fixed square) and gives the hero a normal light-card look consistent
+ * with the rest of the app.
+ */
+.dash-hero {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-bottom: 1.25rem;
+}
+
+.dash-hero h1 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0F172A;
+    margin: 0 0 2px;
+    line-height: 1.25;
+}
+
+.hero-sub {
+    font-size: 0.82rem;
+    color: #64748B;
+}
+
+.hero-badge {
+    height: 52px;
+    min-width: 52px;
+    max-width: 180px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #0F6B4F 0%, #0B5940 100%);
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+/* An uploaded organization logo can be any aspect ratio (a wide wordmark, a
+   tall icon, a square mark, etc.). Earlier attempts either stretched it to
+   fill a fixed square (cropping most of it away) or fit it inside a fixed
+   square with a lot of empty padding (leaving a wide logo as a barely
+   visible sliver). Constraining the image itself with fixed pixel
+   max-width/max-height (not percentages, which would be circular against
+   an auto-sized container) lets it scale down to the largest size that
+   fits without ever cropping or distorting it. */
+.hero-badge img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 160px;
+    max-height: 44px;
+    object-fit: contain;
+}
+
+.hero-overlap {
+    margin-top: 0;
+}
