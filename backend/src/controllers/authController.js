@@ -3,6 +3,7 @@ const Employer = require('../models/Employer');
 const Employee = require('../models/Employee');
 const { loadConfiguration, headedDepartments } = require('../services/departmentScope');
 const { resolveDelegatedCapabilities, getActiveDelegationsSummary } = require('../services/delegationCapabilities');
+const emailService = require('../services/emailService');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { validationResult } = require('express-validator');
@@ -403,7 +404,7 @@ exports.updateProfile = async (req, res) => {
 // PASSWORD RESET FUNCTIONALITY
 // ============================================
 
-// @desc    Forgot password - Generate reset token
+// @desc    Forgot password - Generate reset token and email it
 // @route   POST /api/auth/forgotpassword
 // @access  Public
 exports.forgotPassword = async (req, res) => {
@@ -418,30 +419,35 @@ exports.forgotPassword = async (req, res) => {
             });
         }
 
-        const user = await User.findOne({ email });
+        // Matches on the same normalized form the schema stores (lowercase,
+        // trimmed) - the previous exact-match lookup silently failed to find
+        // an existing account whenever the submitted address had different
+        // casing or surrounding whitespace than how it was originally saved.
+        const normalizedEmail = email.trim().toLowerCase();
+        const user = await User.findOne({ email: normalizedEmail });
+
+        // Always respond the same way whether or not the account exists -
+        // a route that reveals which email addresses are registered is a
+        // user-enumeration hole. The reset token/link are only ever sent by
+        // email now (previously returned directly in this response, which
+        // let anyone who knew an email address reset that account's
+        // password without ever receiving the email).
+        const genericResponse = {
+            success: true,
+            message: 'If an account exists for this email address, a password reset link has been sent.'
+        };
+
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'No user found with this email'
-            });
+            return res.status(200).json(genericResponse);
         }
 
-        // Get reset token
         const resetToken = user.getResetPasswordToken();
         await user.save({ validateBeforeSave: false });
 
-        // Create reset URL (for frontend)
-        const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${resetToken}`;
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password/${resetToken}`;
+        await emailService.sendPasswordResetEmail(user.email, user.name, resetUrl);
 
-        // TODO: Send email with reset URL
-        // For now, return the token in response for testing
-        res.status(200).json({
-            success: true,
-            message: 'Password reset token generated. Check your email for the reset link.',
-            resetToken: resetToken,
-            resetUrl: resetUrl
-        });
-
+        res.status(200).json(genericResponse);
     } catch (error) {
         console.error(error);
         res.status(500).json({

@@ -11,6 +11,7 @@ import Footer from './components/common/Footer';
 import Home from './components/Home';
 import Login from './components/auth/Login';
 import Register from './components/auth/Register';
+import ForgotPassword from './components/auth/ForgotPassword';
 import ActivateEmployee from './components/auth/ActivateEmployee';
 import ResetPassword from './components/auth/ResetPassword';
 import JobSearch from './components/candidate/JobSearch';
@@ -102,6 +103,10 @@ function AppContent() {
                     <Route path="/" element={<Home />} />
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
+                    {/* Reached from the "Forgot Password?" link on the login page -
+                        this route previously did not exist even though the backend
+                        endpoint it calls (POST /auth/forgotpassword) already did. */}
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
                     {/* Reached from the activation link a hired candidate receives.
                         Public because they are not yet an employee - the link is
                         what grants that. */}
