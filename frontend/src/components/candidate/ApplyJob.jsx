@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Form, Button, Spinner, Badge, Modal, ProgressBar, Alert } from 'react-bootstrap';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { FaArrowLeft, FaUpload, FaCheckCircle, FaRobot, FaMoneyBillWave, FaClock, FaBriefcase, FaBookmark, FaRegBookmark, FaBuilding, FaUserCheck } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -31,6 +31,7 @@ const ApplyJob = () => {
 
     useEffect(() => {
         fetchJobAndResumes();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [jobId]);
 
     const fetchJobAndResumes = async () => {

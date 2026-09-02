@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Navbar, Nav, Container, Button, Dropdown, Badge } from 'react-bootstrap';
+import { Navbar, Nav, Container, Button, Dropdown } from 'react-bootstrap';
 import { 
-    FaUser, 
     FaBriefcase, 
     FaSignOutAlt, 
     FaUserPlus, 
@@ -13,14 +12,7 @@ import {
     FaSun,
     FaChartBar,
     FaCog,
-    FaCalendar,
-    FaClock,
-    FaBook,
-    FaFlag,
-    FaExchangeAlt,
-    FaBars,
-    FaInfoCircle,
-    FaEnvelope
+    FaBars
 } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -67,17 +59,6 @@ const CustomNavbar = () => {
             admin: t('auth.admin')
         };
         return roleMap[role] || role;
-    };
-
-    // Get role icon
-    const getRoleIcon = (role) => {
-        const iconMap = {
-            candidate: <FaUser size={14} />,
-            hr_expert: <FaBuilding size={14} />,
-            hr_manager: <FaUserCog size={14} />,
-            admin: <FaUserCog size={14} />
-        };
-        return iconMap[role] || <FaUser size={14} />;
     };
 
     const isActive = (path) => {

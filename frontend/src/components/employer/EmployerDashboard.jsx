@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-    FaBriefcase, FaFileAlt, FaUserFriends, FaCheckCircle, FaBuilding, FaClock,
+    FaBriefcase, FaFileAlt, FaUserFriends, FaCheckCircle, FaBuilding,
     FaUsers, FaCalendarAlt, FaClipboardList, FaGraduationCap, FaComments, FaPlus
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';

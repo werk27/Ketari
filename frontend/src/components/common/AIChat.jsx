@@ -1,17 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Button, Card, Form, Spinner, Badge, Image, OverlayTrigger, Tooltip } from 'react-bootstrap';
+import { Button, Card, Form, Spinner, Badge, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { 
-    FaRobot, FaTimes, FaPaperPlane, FaUser, FaComment, 
-    FaLightbulb, FaBriefcase, FaGraduationCap, FaTrash,
-    FaRedo, FaSmile, FaFileAlt, FaQuestionCircle, FaStar
+    FaRobot, FaTimes, FaPaperPlane, FaUser, 
+    FaLightbulb, FaBriefcase, FaGraduationCap,
+    FaRedo, FaFileAlt, FaQuestionCircle, FaStar
 } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import api from '../../services/api';
 
 const AIChat = () => {
     const { user } = useAuth();
-    const { language, t } = useLanguage();
+    const { language } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
@@ -19,13 +18,12 @@ const AIChat = () => {
     const [conversationCount, setConversationCount] = useState(0);
     const [isMinimized, setIsMinimized] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
-    const [contextData, setContextData] = useState({});
+    const [contextData] = useState({});
     const messagesEndRef = useRef(null);
     const chatContainerRef = useRef(null);
 
     const userType = user?.role || 'candidate';
     const userId = user?.id || 'guest';
-    const isAuthenticated = !!user;
 
     useEffect(() => {
         const userName = user?.name || 'there';

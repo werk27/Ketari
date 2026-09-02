@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Form, Badge, Spinner, InputGroup, Pagination } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
-import { FaSearch, FaMapMarkerAlt, FaStar, FaBriefcase, FaCheckCircle, FaMoneyBillWave, FaFilter } from 'react-icons/fa';
-import { useAuth } from '../../context/AuthContext';
+import { FaSearch, FaMapMarkerAlt, FaStar, FaCheckCircle, FaFilter } from 'react-icons/fa';
 import { useLanguage } from '../../context/LanguageContext';
 import api from '../../services/api';
 import BackButton from '../common/BackButton';
 import './CandidateList.css';
 
 const CandidateList = () => {
-    const { user } = useAuth();
     const { t } = useLanguage();
     const [candidates, setCandidates] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,6 +31,7 @@ const CandidateList = () => {
 
     useEffect(() => {
         fetchCandidates();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filters, pagination.currentPage]);
 
     useEffect(() => {

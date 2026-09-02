@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Form, Button, Spinner, Alert, Badge, Tab, Tabs, Nav, Table, Image } from 'react-bootstrap';
-import { FaUser, FaUpload, FaTrash, FaStar, FaCheck, FaPlus, FaTimes, FaGraduationCap, FaBriefcase, FaCertificate, FaLanguage, FaEdit, FaSave, FaCamera, FaBuilding } from 'react-icons/fa';
+import { Container, Row, Col, Card, Form, Button, Spinner, Badge, Nav, Table } from 'react-bootstrap';
+import { FaUser, FaUpload, FaTrash, FaStar, FaCheck, FaPlus, FaTimes, FaGraduationCap, FaBriefcase, FaCertificate, FaLanguage, FaSave, FaCamera, FaBuilding } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import api, { getImageUrl } from '../../services/api';

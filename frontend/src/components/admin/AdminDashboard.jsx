@@ -4,12 +4,11 @@ import {
     Form, Modal, ProgressBar, Offcanvas 
 } from 'react-bootstrap';
 import { 
-    FaUsers, FaBriefcase, FaBuilding,
+    FaUsers, FaBuilding,
     FaClock, FaEye,
     FaUserPlus, FaCog, FaUserCheck, FaShieldAlt,
     FaUserTie
 } from 'react-icons/fa';
-import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import { Link, useNavigate } from 'react-router-dom';

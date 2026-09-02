@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Button, Card, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
-import { FaRobot, FaBriefcase, FaUsers, FaCheckCircle, FaLaptopCode, FaChartBar, FaBullhorn, FaPenNib, FaHeadset, FaMicrophone, FaLanguage, FaDesktop } from 'react-icons/fa';
+import { FaRobot, FaLaptopCode, FaChartBar, FaBullhorn, FaPenNib, FaHeadset, FaMicrophone, FaLanguage, FaDesktop } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import api from '../services/api';
@@ -11,6 +11,7 @@ const Home = () => {
     const { isAuthenticated } = useAuth();
     const { t } = useLanguage();
     const [stats, setStats] = useState({ jobs: 24, candidates: 156, placements: 89, companies: 24 });
+    // eslint-disable-next-line no-unused-vars
     const [recentJobs, setRecentJobs] = useState([]);
     const [loading, setLoading] = useState(true);
     const servicesRef = useRef(null);

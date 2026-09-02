@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, Button, Form, Badge, Spinner, InputGroup, Pagination } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
-import { FaSearch, FaMapMarkerAlt, FaBriefcase, FaClock, FaFilter, FaStar, FaRobot, FaRegBookmark, FaBookmark, FaMoneyBillWave, FaTags, FaUsers } from 'react-icons/fa';
+import { FaSearch, FaMapMarkerAlt, FaBriefcase, FaClock, FaRobot, FaRegBookmark, FaBookmark, FaMoneyBillWave, FaUsers } from 'react-icons/fa';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import api, { formatSalary } from '../../services/api';
@@ -38,6 +38,7 @@ const JobSearch = () => {
             setSavedJobIds(user.profile.savedJobs.map(j => typeof j === 'string' ? j : j._id));
         }
         fetchJobs();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filters, pagination.currentPage]);
 
     // When selected skills array changes, update the comma-separated string filter
