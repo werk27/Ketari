@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Card, Form, Button, Badge, Spinner, Alert, Row, Col } from 'react-bootstrap';
 import { FaExclamationTriangle, FaPlus, FaChevronDown, FaChevronUp, FaCommentDots } from 'react-icons/fa';
-import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
 
 const Complaints = () => {
-    const { user } = useAuth();
     const { t } = useLanguage();
     const [loading, setLoading] = useState(true);
     const [complaints, setComplaints] = useState([]);

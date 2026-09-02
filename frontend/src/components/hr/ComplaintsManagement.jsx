@@ -124,16 +124,21 @@ const ComplaintsManagement = () => {
                                                     <Button key={s.key} size="sm"
                                                             variant={s.key === 'resolved' ? 'success' : 'outline-secondary'}
                                                             disabled={busyId === complaint._id}
-                                                            onClick={() => ['resolved', 'responded'].includes(s.key)
+                                                            onClick={() => {
                                                                 // Responding/resolving is the FEEDBACK the complainant
                                                                 // reads on their own page - always collect the note.
-                                                                ? (setActionTarget({ complaint, kind: s.key }), setResolution(''))
-                                                                : setStatus(complaint, s.key)}>
+                                                                if (['resolved', 'responded'].includes(s.key)) {
+                                                                    setActionTarget({ complaint, kind: s.key });
+                                                                    setResolution('');
+                                                                } else {
+                                                                    setStatus(complaint, s.key);
+                                                                }
+                                                            }}>
                                                         {s.label}
                                                     </Button>
                                                 ))}
                                             <Button size="sm" variant="outline-danger" disabled={busyId === complaint._id}
-                                                    onClick={() => (setActionTarget({ complaint, kind: 'rejected' }), setResolution(''))}>
+                                                    onClick={() => { setActionTarget({ complaint, kind: 'rejected' }); setResolution(''); }}>
                                                 Reject
                                             </Button>
                                         </div>
