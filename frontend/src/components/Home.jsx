@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Container, Row, Col, Button, Card, Badge } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { FaRobot, FaBriefcase, FaUsers, FaCheckCircle, FaLaptopCode, FaChartBar, FaBullhorn, FaPenNib, FaHeadset, FaMicrophone, FaLanguage, FaDesktop } from 'react-icons/fa';
@@ -13,10 +13,28 @@ const Home = () => {
     const [stats, setStats] = useState({ jobs: 24, candidates: 156, placements: 89, companies: 24 });
     const [recentJobs, setRecentJobs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const servicesRef = useRef(null);
+    const [servicesInView, setServicesInView] = useState(false);
 
     useEffect(() => {
         fetchData();
     }, []);
+
+    useEffect(() => {
+        const el = servicesRef.current;
+        if (!el) return;
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    setServicesInView(true);
+                    observer.disconnect();
+                }
+            },
+            { threshold: 0.15 }
+        );
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [loading]);
 
     const fetchData = async () => {
         try {
@@ -207,11 +225,11 @@ const Home = () => {
             </section>
 
             {/* Popular Services Grid */}
-            <section className="popular-services-section py-5">
+            <section ref={servicesRef} className={`popular-services-section py-5${servicesInView ? ' services-in-view' : ''}`}>
                 <Container className="py-4">
-                    <div className="text-center mb-5 animate-fade-in-up">
+                    <div className="text-center mb-5 service-reveal">
                         <Badge bg="light" text="dark" className="px-3 py-2 border mb-3 rounded-pill">
-                            <span className="text-warning me-1">🔥</span> {t('home.in_demand')}
+                            <span className="text-warning me-1 flame-pulse">🔥</span> {t('home.in_demand')}
                         </Badge>
                         <h2 className="fw-bold">{t('home.popular_services')}</h2>
                         <p className="text-muted">{t('home.popular_services_desc')}</p>
@@ -219,11 +237,13 @@ const Home = () => {
                     
                     <Row className="g-3 justify-content-center">
                         {popularServices.map((service, idx) => (
-                            <Col xs={6} md={3} lg={3} key={idx} className="animate-fade-in-up" style={{ animationDelay: `${idx * 0.05}s` }}>
+                            <Col xs={6} md={3} lg={3} key={idx} className="service-reveal" style={{ transitionDelay: `${0.1 + idx * 0.08}s` }}>
                                 <Card className="service-card text-center h-100 border shadow-sm card-hover">
                                     <Card.Body className="d-flex flex-column align-items-center justify-content-center p-4">
-                                        <div className="service-icon mb-3">
-                                            {service.icon}
+                                        <div className="service-icon-wrap mb-3" style={{ animationDelay: `${idx * 0.45}s` }}>
+                                            <div className="service-icon">
+                                                {service.icon}
+                                            </div>
                                         </div>
                                         <h6 className="fw-bold mb-0 text-dark">{service.title}</h6>
                                     </Card.Body>

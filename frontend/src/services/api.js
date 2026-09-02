@@ -47,6 +47,17 @@ api.interceptors.response.use(
             // next sign-in attempt looked like a failure. Tell AuthContext too.
             window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
         }
+        // The employee's approved leave started while they were signed in: the
+        // backend now rejects every request for the duration. End the client
+        // session cleanly so they land on the login page, where the same
+        // clear "access restored on your return date" message is shown.
+        if (error.response?.status === 403
+            && error.response?.data?.code === 'ON_LEAVE_ACCESS_BLOCKED'
+            && !isAuthAttempt(error.config?.url)) {
+            localStorage.removeItem('token');
+            delete api.defaults.headers.common['Authorization'];
+            window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+        }
         return Promise.reject(error);
     }
 );

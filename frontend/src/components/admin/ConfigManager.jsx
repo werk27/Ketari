@@ -5,6 +5,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 const ConfigManager = () => {
     const { t } = useLanguage();
@@ -14,6 +15,8 @@ const ConfigManager = () => {
     const [showAddModal, setShowAddModal] = useState(false);
     const [newItem, setNewItem] = useState({});
     const [error, setError] = useState('');
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         fetchConfig();
@@ -94,8 +97,12 @@ const ConfigManager = () => {
         }
     };
 
-    const handleDeleteItem = async (type, id) => {
-        if (!window.confirm('Are you sure you want to delete this?')) return;
+    const handleDeleteItem = (type, item) => setDeleteTarget({ type, item });
+
+    const confirmDeleteItem = async () => {
+        if (!deleteTarget) return;
+        const { type, item } = deleteTarget;
+        setDeleting(true);
         try {
             // Map frontend type to backend route
             const typeToRoute = {
@@ -119,14 +126,17 @@ const ConfigManager = () => {
                 'partners': 'partners',
                 'positionRanks': 'position-ranks'
             };
-            
+
             const route = typeToRoute[type] || type;
-            const response = await api.delete(`/config/${route}/${id}`);
+            const response = await api.delete(`/config/${route}/${item._id}`);
             setConfig(response.data.data);
             toast.success('Item deleted successfully!');
+            setDeleteTarget(null);
         } catch (error) {
             console.error('Delete error:', error);
-            toast.error('Failed to delete item');
+            toast.error(error.response?.data?.message || 'Failed to delete item');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -238,7 +248,7 @@ const ConfigManager = () => {
                                 </Badge>
                             </td>
                             <td>
-                                <Button variant="outline-danger" size="sm" onClick={() => handleDeleteItem(type, item._id)}>
+                                <Button variant="outline-danger" size="sm" onClick={() => handleDeleteItem(type, { ...item, __displayField: fields[0] })}>
                                     <FaTrash />
                                 </Button>
                             </td>
@@ -1002,6 +1012,16 @@ const ConfigManager = () => {
                     </Button>
                 </Modal.Footer>
             </Modal>
+
+            <ConfirmDeleteModal
+                show={!!deleteTarget}
+                title="Delete this item?"
+                itemName={deleteTarget?.item?.name || deleteTarget?.item?.title
+                    || (deleteTarget?.item?.__displayField && deleteTarget.item[deleteTarget.item.__displayField])}
+                busy={deleting}
+                onCancel={() => setDeleteTarget(null)}
+                onConfirm={confirmDeleteItem}
+            />
         </Container>
     );
 };

@@ -28,6 +28,10 @@ const STATUS_STYLES = {
     returned: { label: 'Returned', bg: '#FEE2E2', color: '#991B1B' },
     job_created: { label: 'Job Created', bg: '#16A34A', color: '#FFFFFF' },
 
+    // Leave lifecycle
+    returned_for_correction: { label: 'Returned for Correction', bg: '#FEE2E2', color: '#991B1B' },
+    cancelled: { label: 'Cancelled', bg: '#F1F5F9', color: '#475569' },
+
     // Application pipeline
     applied: { label: 'Applied', bg: '#E0E7FF', color: '#3730A3' },
     pending: { label: 'Pending', bg: '#F1F5F9', color: '#475569' },
@@ -58,7 +62,18 @@ const STATUS_STYLES = {
     under_hr_verification: { label: 'Under HR Verification', bg: '#FEF3C7', color: '#92400E' },
     pending_manager_approval: { label: 'Pending Manager Approval', bg: '#DBEAFE', color: '#1E40AF' },
     needs_correction: { label: 'Needs Correction', bg: '#FEE2E2', color: '#991B1B' },
-    complete: { label: 'Complete', bg: '#16A34A', color: '#FFFFFF' }
+    complete: { label: 'Complete', bg: '#16A34A', color: '#FFFFFF' },
+
+    // Delegation workflow
+    pending_hr_expert_review: { label: 'Pending HR Review', bg: '#FEF3C7', color: '#92400E' },
+    rejected_by_hr_expert: { label: 'Rejected by HR Expert', bg: '#FEE2E2', color: '#991B1B' },
+    pending_hr_manager_approval: { label: 'Pending Manager Approval', bg: '#DBEAFE', color: '#1E40AF' },
+    rejected_by_hr_manager: { label: 'Rejected by HR Manager', bg: '#FEE2E2', color: '#991B1B' },
+    approved_pending_acceptance: { label: 'Awaiting Acceptance', bg: '#EDE9FE', color: '#5B21B6' },
+    declined_by_delegate: { label: 'Declined by Delegate', bg: '#FEE2E2', color: '#991B1B' },
+    scheduled: { label: 'Scheduled', bg: '#CFFAFE', color: '#155E75' },
+    revoked: { label: 'Revoked', bg: '#FEE2E2', color: '#991B1B' },
+    completed: { label: 'Completed', bg: '#F1F5F9', color: '#475569' }
 };
 
 export const StatusBadge = ({ status }) => {

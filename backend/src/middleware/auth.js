@@ -2,7 +2,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Employer = require('../models/Employer');
 const { userCan, capabilitiesFor, ORG_ROLES } = require('../config/permissions');
-const { resolveDelegatedCapabilities } = require('../services/delegationCapabilities');
+const { resolveDelegationEffects } = require('../services/delegationCapabilities');
+const { getActiveLeaveBlock, buildLeaveBlockResponse } = require('../services/leaveAccess');
 
 // Protect routes
 exports.protect = async (req, res, next) => {
@@ -34,10 +35,25 @@ exports.protect = async (req, res, next) => {
                 message: 'Your account has been deactivated'
             });
         }
+        // Business rule: an employee currently on approved leave is blocked
+        // from the whole work system, not just the login screen - an already
+        // issued token must stop working the instant their leave starts, and
+        // start working again automatically the instant it ends. The account
+        // itself, its role and its permissions are never touched.
+        const leaveBlock = await getActiveLeaveBlock(req.user);
+        if (leaveBlock) {
+            return res.status(403).json(buildLeaveBlockResponse(leaveBlock));
+        }
         // Delegations only ever happen between members of the same
-        // organization; resolveDelegatedCapabilities itself skips roles
-        // that can never be a delegate (admin, candidate).
-        req.user.delegatedCapabilities = await resolveDelegatedCapabilities(req.user);
+        // organization; resolveDelegationEffects itself skips roles that can
+        // never take part (admin, candidate). `granted` are capabilities this
+        // user temporarily holds as a delegate; `suspended` are their own
+        // capabilities currently handed away as a delegator - delegation is a
+        // temporary substitution, so the delegator cannot exercise a
+        // responsibility they delegated while it is in effect.
+        const effects = await resolveDelegationEffects(req.user);
+        req.user.delegatedCapabilities = effects.granted;
+        req.user.delegatedAwayCapabilities = effects.suspended;
         next();
     } catch (error) {
         return res.status(401).json({
@@ -70,6 +86,21 @@ exports.authorize = (...roles) => {
 exports.can = (...capabilities) => {
     return (req, res, next) => {
         const granted = capabilities.every(capability => userCan(req.user, capability));
+
+        if (!granted) {
+            return res.status(403).json({
+                success: false,
+                message: 'You do not have permission to perform this action'
+            });
+        }
+        next();
+    };
+};
+
+/** Grants access when the user holds AT LEAST ONE of the capabilities. */
+exports.canAny = (...capabilities) => {
+    return (req, res, next) => {
+        const granted = capabilities.some(capability => userCan(req.user, capability));
 
         if (!granted) {
             return res.status(403).json({

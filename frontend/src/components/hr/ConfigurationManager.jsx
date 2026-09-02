@@ -3,6 +3,7 @@ import { Button, Form, Nav, Table } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { FaPlus, FaTrash, FaEdit, FaInfoCircle, FaTimes, FaPowerOff } from 'react-icons/fa';
 import api from '../../services/api';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -22,8 +23,12 @@ import {
  * lists - nothing else in the system currently ties a Job Title to a
  * Department, so that relationship is not invented here.
  *
- * Skills, Languages, Leave Types etc. have no such relationships and keep the
- * original simple "name + one detail field" list editor.
+ * Skills, Languages, Training Types etc. have no such relationships and keep
+ * the original simple "name + one detail field" list editor. Leave Types is
+ * the one exception among the "HR Policies" lists: it uses the full
+ * EntityManager editor (like Job Titles/Partners) so days/year - the actual
+ * entitlement leave requests are validated against - can be edited in place
+ * instead of forcing a delete-and-recreate.
  */
 const GROUPS = [
     {
@@ -46,8 +51,11 @@ const GROUPS = [
     {
         key: 'hr',
         label: 'HR Policies',
+        // Leave Types is rendered separately via EntityManager (below), not in
+        // this list - it needs full Edit/Update support (days/year is the
+        // actual entitlement every leave request is validated against), unlike
+        // the simple name-only lists here which only need add/remove.
         lists: [
-            { type: 'leave-types', label: 'Leave Types', fields: ['name', 'daysPerYear'] },
             { type: 'training-types', label: 'Training Types', fields: ['name', 'category'] },
             { type: 'employment-status', label: 'Employment Status', fields: ['name'] },
             { type: 'termination-reasons', label: 'Termination Reasons', fields: ['name', 'category'] },
@@ -124,6 +132,8 @@ const EntityManager = ({
     const [form, setForm] = useState(emptyForm);
     const [editingId, setEditingId] = useState(null);
     const [busy, setBusy] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting, setDeleting] = useState(false);
 
     const setField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
 
@@ -173,24 +183,29 @@ const EntityManager = ({
         }
     };
 
-    const remove = async (item) => {
-        setBusy(true);
+    const remove = (item) => setDeleteTarget(item);
+
+    const confirmRemove = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
         try {
-            await api.delete(`/config/${type}/${item._id}`);
+            await api.delete(`/config/${type}/${deleteTarget._id}`);
             toast.success(`${label} removed`);
+            setDeleteTarget(null);
             items.onChanged();
         } catch (err) {
             // A 409 here always carries the specific reason it's still in use
             // (e.g. "assigned to one or more employees") - never a silent failure.
             toast.error(err.response?.data?.message || `Could not remove this ${label.toLowerCase()}`);
         } finally {
-            setBusy(false);
+            setDeleting(false);
         }
     };
 
     const list = items.list;
 
     return (
+        <>
         <Card className="p-3 h-100">
             <div className="d-flex justify-content-between align-items-center mb-3">
                 <div className="fw-semibold text-dark" style={{ fontSize: '0.9rem' }}>{labelPlural}</div>
@@ -253,6 +268,17 @@ const EntityManager = ({
                 </div>
             )}
         </Card>
+
+        <ConfirmDeleteModal
+            show={!!deleteTarget}
+            title={`Delete ${label}?`}
+            itemName={deleteTarget?.name || deleteTarget?.title}
+            confirmLabel={`Delete ${label}`}
+            busy={deleting}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={confirmRemove}
+        />
+        </>
     );
 };
 
@@ -548,6 +574,8 @@ const ConfigurationManager = () => {
     const [group, setGroup] = useState('organization');
     const [drafts, setDrafts] = useState({});
     const [busy, setBusy] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting, setDeleting] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -592,16 +620,21 @@ const ConfigurationManager = () => {
         }
     };
 
-    const remove = async (list, item) => {
-        setBusy(list.type);
+    const remove = (list, item) => setDeleteTarget({ list, item });
+
+    const confirmRemove = async () => {
+        if (!deleteTarget) return;
+        const { list, item } = deleteTarget;
+        setDeleting(true);
         try {
             await api.delete(`/config/${list.type}/${item._id}`);
             toast.success('Removed');
+            setDeleteTarget(null);
             load();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Could not remove the item');
         } finally {
-            setBusy(null);
+            setDeleting(false);
         }
     };
 
@@ -612,6 +645,7 @@ const ConfigurationManager = () => {
     if (error) return <ErrorState message={error} onRetry={load} />;
 
     return (
+        <>
         <div>
             <Card className="p-3 mb-3">
                 <SectionHeader
@@ -642,6 +676,63 @@ const ConfigurationManager = () => {
                 <OrganizationStructure config={config} meta={meta} onChanged={load} />
             ) : (
                 <div className="row g-3">
+                    {group === 'hr' && (
+                        <div className="col-12 col-lg-6">
+                            <EntityManager
+                                type="leave-types" field="leaveTypes" label="Leave Type" labelPlural="Leave Types"
+                                items={{ list: config?.leaveTypes || [], onChanged: load }}
+                                emptyForm={{ name: '', daysPerYear: '', status: 'active' }}
+                                toFormValues={(item) => ({
+                                    name: item.name,
+                                    daysPerYear: item.daysPerYear ?? '',
+                                    status: item.status || 'active'
+                                })}
+                                buildPayload={(form) => {
+                                    // Frontend validation, mirrored by the backend (never rely on
+                                    // frontend-only checks) - surfaced the same way the shared
+                                    // EntityManager already surfaces a real backend error.
+                                    const name = (form.name || '').trim();
+                                    if (!name) {
+                                        throw Object.assign(new Error('name required'), {
+                                            response: { data: { message: 'Leave type name is required.' } }
+                                        });
+                                    }
+                                    const daysPerYear = Number(form.daysPerYear);
+                                    if (form.daysPerYear === '' || Number.isNaN(daysPerYear) || daysPerYear <= 0) {
+                                        throw Object.assign(new Error('invalid days'), {
+                                            response: { data: { message: 'Days/year must be a valid positive number.' } }
+                                        });
+                                    }
+                                    return { name, daysPerYear, status: form.status };
+                                }}
+                                renderFields={({ form, setField }) => (
+                                    <div className="row g-2">
+                                        <div className="col-12 col-md-6">
+                                            <Form.Label style={{ fontSize: '0.75rem' }}>Leave Type</Form.Label>
+                                            <Form.Control size="sm" value={form.name} onChange={e => setField('name', e.target.value)}
+                                                          placeholder="e.g., Marriage Leave" />
+                                        </div>
+                                        <div className="col-6 col-md-3">
+                                            <Form.Label style={{ fontSize: '0.75rem' }}>Days/year</Form.Label>
+                                            <Form.Control size="sm" type="number" min="1" step="1" value={form.daysPerYear}
+                                                          onChange={e => setField('daysPerYear', e.target.value)} placeholder="e.g., 3" />
+                                        </div>
+                                        <div className="col-6 col-md-3">
+                                            <Form.Label style={{ fontSize: '0.75rem' }}>Status</Form.Label>
+                                            <Form.Select size="sm" value={form.status} onChange={e => setField('status', e.target.value)}>
+                                                {STATUS_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                                            </Form.Select>
+                                        </div>
+                                    </div>
+                                )}
+                                columns={[
+                                    { header: 'Name', render: (i) => <span className="fw-semibold text-dark">{i.name}</span> },
+                                    { header: 'Days/year', render: (i) => i.daysPerYear ?? '—' },
+                                    { header: 'Status', render: (i) => <StatusBadge status={i.status} /> }
+                                ]}
+                            />
+                        </div>
+                    )}
                     {activeGroup?.lists.map(list => {
                         const items = config?.[FIELD_BY_TYPE[list.type]] || [];
                         const nameField = list.nameField || 'name';
@@ -714,6 +805,16 @@ const ConfigurationManager = () => {
                 </div>
             )}
         </div>
+
+        <ConfirmDeleteModal
+            show={!!deleteTarget}
+            title="Delete this item?"
+            itemName={deleteTarget ? (deleteTarget.item[deleteTarget.list.nameField || 'name'] || deleteTarget.item.name) : ''}
+            busy={deleting}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={confirmRemove}
+        />
+        </>
     );
 };
 

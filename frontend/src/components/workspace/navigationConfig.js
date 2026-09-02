@@ -255,6 +255,52 @@ const DEPARTMENT_HEAD_SECTION = {
     ]
 };
 
+/**
+ * Pages a user may temporarily need through an ACTIVE delegation.
+ *
+ * The backend genuinely grants delegated capabilities (see
+ * delegationCapabilities.js), but each workspace's static navigation only
+ * lists what the ROLE normally does - so a delegate could hold e.g.
+ * 'leave:approve' with no way to reach the leave page. Any entry whose
+ * capability appears in the user's capabilities but NOT in their own
+ * intrinsic ownCapabilities is surfaced in a "Delegated Duties" section of
+ * their own workspace. Navigation only ever mirrors what the backend
+ * already granted - it never grants anything itself.
+ */
+const DELEGATED_PAGES = [
+    { caps: ['leave:view', 'leave:process', 'leave:approve'], path: 'leave', label: 'Leave', icon: FaCalendarAlt },
+    { caps: ['request:view', 'request:process', 'request:approve'], path: 'requests', label: 'Employee Requests', icon: FaClipboardList },
+    { caps: ['training:view', 'training:record', 'training:approve'], path: 'training', label: 'Training', icon: FaGraduationCap },
+    { caps: ['employee:view'], path: 'employees', label: 'Employees', icon: FaUserFriends },
+    // The employee workspace already uses /complaints for raising their own,
+    // so the management view lives on its own path there (see App.js).
+    { caps: ['complaint:handle'], path: 'complaints', employeePath: 'complaints-management', label: 'Complaints Handling', icon: FaComments }
+];
+
+/** Extra section for capabilities held only via an active delegation. */
+const delegatedDutiesSection = (user, base) => {
+    const own = new Set(user.ownCapabilities || []);
+    const merged = user.capabilities || [];
+    if (!merged.length || own.size === 0) return null;
+
+    const delegatedOnly = merged.filter(c => !own.has(c));
+    if (delegatedOnly.length === 0) return null;
+
+    const prefix = `/${(base.home || '').split('/')[1] || ''}`;
+    const existingTargets = new Set(base.sections.flatMap(s => s.items.map(i => i.to)));
+
+    const items = DELEGATED_PAGES
+        .filter(page => page.caps.some(c => delegatedOnly.includes(c)))
+        .map(page => {
+            const path = (user.role === 'employee' && page.employeePath) ? page.employeePath : page.path;
+            return { to: `${prefix}/${path}`, label: page.label, icon: page.icon };
+        })
+        .filter(item => !existingTargets.has(item.to));
+
+    if (items.length === 0) return null;
+    return { label: 'Delegated Duties', items };
+};
+
 export const ROLE_LABELS = {
     admin: 'System Administrator',
     employer: 'Employer',
@@ -316,7 +362,13 @@ export const getNavigation = (userOrRole) => {
     const base = NAVIGATION[user.role] || null;
     if (!base) return null;
 
-    if (user.role !== 'employee' || !user.employment?.isDepartmentHead) return base;
+    // Pages reachable only through an active delegation, if any.
+    const delegatedSection = delegatedDutiesSection(user, base);
+
+    if (user.role !== 'employee' || !user.employment?.isDepartmentHead) {
+        if (!delegatedSection) return base;
+        return { ...base, sections: [...base.sections, delegatedSection] };
+    }
 
     // The department section leads: for a head this is the reason they open
     // the workspace, and their own HR services stay exactly where they were.
@@ -324,6 +376,11 @@ export const getNavigation = (userOrRole) => {
     return {
         ...base,
         subtitle: 'Employee & Department Head',
-        sections: [overview, DEPARTMENT_HEAD_SECTION, ...rest]
+        sections: [
+            overview,
+            DEPARTMENT_HEAD_SECTION,
+            ...rest,
+            ...(delegatedSection ? [delegatedSection] : [])
+        ]
     };
 };

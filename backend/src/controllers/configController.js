@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Configuration = require('../models/Configuration');
 const Employee = require('../models/Employee');
 const JobRequisition = require('../models/JobRequisition');
+const Leave = require('../models/Leave');
 const User = require('../models/User');
 const Employer = require('../models/Employer');
 const emailService = require('../services/emailService');
@@ -58,8 +59,11 @@ const CONFIG_COLLECTIONS = {
 /** Lists that describe a person, not the organization's structure. */
 const PERSONAL_ATTRIBUTE_COLLECTIONS = ['religions', 'maritalStatus', 'bloodTypes'];
 
-/** Cross-referenced by Positions/Departments/Ranks - checked before a hard delete. */
-const RELATIONAL_TYPES = ['departments', 'positions', 'position-ranks'];
+/** Cross-referenced by Positions/Departments/Ranks/Leave Types - checked before a hard delete. */
+const RELATIONAL_TYPES = ['departments', 'positions', 'position-ranks', 'leave-types'];
+
+/** Case-insensitive exact-match regex escape, matching the convention already used in authController/applicationController. */
+const escapeRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const PARTNER_TYPE_VALUES = Configuration.PARTNER_TYPES.map(t => t.value);
 
@@ -291,6 +295,39 @@ const VALIDATORS = {
                 status: isActiveStatus(body.status)
             }
         };
+    },
+
+    // Leave types get their own validator (rather than the generic
+    // name-only rule) so that days/year - the actual entitlement rule every
+    // leave request is validated against (see leaveController) - can never be
+    // saved as missing, non-numeric, zero or negative. Still preserves every
+    // other field (paid, carryOver, requiresAttachment, description, ...) via
+    // spread exactly like genericValidate did, so editing name/days/status
+    // through the new Edit UI can never silently wipe them.
+    'leave-types': (body, config, editingId) => {
+        const name = (body.name || '').trim();
+        if (!name) return { error: 'Leave type name is required.' };
+
+        const duplicate = config.leaveTypes.find(t =>
+            t.name.toLowerCase() === name.toLowerCase() && String(t._id) !== String(editingId));
+        if (duplicate) return { error: `A leave type named "${name}" already exists.` };
+
+        if (body.daysPerYear === undefined || body.daysPerYear === '' || body.daysPerYear === null) {
+            return { error: 'Days/year is required.' };
+        }
+        const daysPerYear = Number(body.daysPerYear);
+        if (Number.isNaN(daysPerYear) || daysPerYear <= 0) {
+            return { error: 'Days/year must be a valid positive number.' };
+        }
+
+        return {
+            value: {
+                ...body,
+                name,
+                daysPerYear,
+                status: isActiveStatus(body.status)
+            }
+        };
     }
 };
 
@@ -336,6 +373,23 @@ const findReferenceBlockingDelete = async (type, item, config, req) => {
     if (type === 'position-ranks') {
         if (config.positions.some(p => p.rank && String(p.rank) === String(item._id))) {
             return 'This position rank is assigned to one or more positions. Remove that assignment first, or set the rank to inactive instead of deleting it.';
+        }
+    }
+
+    // Historical Leave requests store a plain-text snapshot of the leave
+    // type's name (Leave.leaveTypeName), never a live reference - editing or
+    // renaming a leave type elsewhere never rewrites past requests. But a
+    // hard DELETE of the leave type itself must still be blocked while any
+    // request (of any status - approved, rejected, cancelled all remain
+    // real history) still names it, the same "deactivate, don't destroy"
+    // rule already applied to departments/positions/ranks above.
+    if (type === 'leave-types' && req.employerId) {
+        const usedByLeave = await Leave.exists({
+            employer: req.employerId,
+            leaveTypeName: { $regex: new RegExp(`^${escapeRegex(item.name)}$`, 'i') }
+        });
+        if (usedByLeave) {
+            return 'This leave type has already been used in one or more leave requests. Set it to inactive instead of deleting it.';
         }
     }
 

@@ -11,6 +11,7 @@ const auditService = require('../services/auditService');
 const notificationService = require('../services/notificationService');
 const emailService = require('../services/emailService');
 const User = require('../models/User');
+const { vacancyStats, autoCloseIfFilled } = require('../services/vacancyFulfillment');
 
 // Statuses in which a vacancy still accepts applications.
 const OPEN_STATUSES = ['published', 'approved', 'open'];
@@ -105,6 +106,19 @@ exports.applyJob = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'The application deadline for this vacancy has passed'
+            });
+        }
+
+        // A vacancy that has already been fully staffed should not keep
+        // accepting new applications, even if nobody has closed it yet (the
+        // auto-close in decideApplication only reacts to a hire that is
+        // itself in progress, so this is a belt-and-braces check for a
+        // fully-hired job whose status somehow remained public).
+        const { isFull, hired, required } = await vacancyStats(job);
+        if (isFull) {
+            return res.status(400).json({
+                success: false,
+                message: `This vacancy is no longer accepting applications - all ${required} position(s) have been filled (${hired} hired).`
             });
         }
 
@@ -736,6 +750,41 @@ exports.decideApplication = async (req, res) => {
             }
         }
 
+        // If this hire fills the vacancy's last open position, close it
+        // automatically - the same effect the HR Manager gets from the
+        // manual "Close" action - so it stops accepting applications and
+        // drops off the public job board without anyone having to remember.
+        let vacancyClosed = null;
+        if (outcome === 'approved' && finalStatus === 'hired') {
+            try {
+                vacancyClosed = await autoCloseIfFilled(application.job._id, req.user.id);
+                if (vacancyClosed) {
+                    const filledMessage = `"${vacancyClosed.title}" has reached its required headcount and was automatically closed.`;
+                    // Two calls, not one shared roles:[...] call - hr_expert and
+                    // employer each have a different workspace path prefix (see
+                    // the applyJob notifications above for the same pattern).
+                    await notificationService.notifyRoles({
+                        employer: application.employer,
+                        roles: ['hr_expert'],
+                        type: 'vacancy_filled',
+                        title: 'Vacancy filled',
+                        message: filledMessage,
+                        link: '/hr-expert/vacancies'
+                    });
+                    await notificationService.notifyRoles({
+                        employer: application.employer,
+                        roles: ['employer'],
+                        type: 'vacancy_filled',
+                        title: 'Vacancy filled',
+                        message: filledMessage,
+                        link: '/employer/vacancies'
+                    });
+                }
+            } catch (closeError) {
+                console.error('Vacancy auto-close failed:', closeError.message);
+            }
+        }
+
         await auditService.record(req, {
             action: 'application.decision',
             entity: 'Application',
@@ -780,7 +829,8 @@ exports.decideApplication = async (req, res) => {
             success: true,
             message: `Recruitment decision recorded (${finalStatus})`,
             application,
-            onboarding
+            onboarding,
+            vacancyClosed: !!vacancyClosed
         });
     } catch (error) {
         console.error(error);

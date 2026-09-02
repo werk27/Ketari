@@ -5,6 +5,8 @@ const {
     getRequests,
     getMyRequests,
     processRequest,
+    returnRequest,
+    resubmitRequest,
     decideRequest,
     completeRequest,
     cancelRequest
@@ -31,6 +33,17 @@ router.get('/', protect, can(CAPABILITIES.REQUEST_VIEW), withEmployerScope, getR
 // @desc    Process and forward a request for approval
 // @access  Private (HR Expert)
 router.put('/:id/process', protect, can(CAPABILITIES.REQUEST_PROCESS), withEmployerScope, processRequest);
+
+// @route   PUT /api/requests/:id/return
+// @desc    Send a submitted request back to the requester for correction
+//          (the HR Expert's only corrective action - no Expert final reject)
+// @access  Private (HR Expert)
+router.put('/:id/return', protect, can(CAPABILITIES.REQUEST_PROCESS), withEmployerScope, returnRequest);
+
+// @route   PUT /api/requests/:id/resubmit
+// @desc    Requester corrects and resubmits a returned request
+// @access  Private (the requester)
+router.put('/:id/resubmit', protect, can(CAPABILITIES.REQUEST_RAISE), withEmployerScope, resubmitRequest);
 
 // @route   PUT /api/requests/:id/decision
 // @desc    Approve or reject a request

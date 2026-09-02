@@ -162,6 +162,18 @@
 }
 
 /* Service Cards */
+/* Scroll-triggered staggered reveal for the Popular Services section */
+.popular-services-section .service-reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.popular-services-section.services-in-view .service-reveal {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .service-card {
     border-radius: var(--radius-xl) !important;
     transition: all 0.3s ease;
@@ -173,12 +185,23 @@
 .service-card:hover {
     border-color: var(--primary-light) !important;
     box-shadow: var(--shadow-md) !important;
-    transform: translateY(-4px);
+    transform: translateY(-6px) scale(1.02);
 }
 
 .service-card:hover .service-icon {
     color: var(--primary-color);
     background: rgba(15, 107, 79, 0.1);
+    transform: scale(1.12) rotate(-6deg);
+}
+
+/* Gentle continuous bobbing of the icons */
+.services-in-view .service-icon-wrap {
+    animation: iconFloat 3.5s ease-in-out infinite;
+}
+
+@keyframes iconFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
 }
 
 .service-icon {
@@ -192,6 +215,28 @@
     color: var(--muted);
     background: #f5f7fa;
     transition: all 0.3s ease;
+}
+
+.flame-pulse {
+    display: inline-block;
+    animation: flamePulse 1.6s ease-in-out infinite;
+}
+
+@keyframes flamePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .popular-services-section .service-reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
+    }
+    .services-in-view .service-icon-wrap,
+    .flame-pulse {
+        animation: none;
+    }
 }
 
 /* Featured Candidates */

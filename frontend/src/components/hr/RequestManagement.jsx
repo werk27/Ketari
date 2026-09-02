@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Modal, Button, Form } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaClipboardList, FaPaperPlane, FaCheck, FaTimes } from 'react-icons/fa';
+import { FaClipboardList, FaPaperPlane, FaCheck, FaTimes, FaUndo } from 'react-icons/fa';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -20,6 +20,7 @@ const TYPE_LABELS = {
 const FILTERS = [
     { key: 'all', label: 'All' },
     { key: 'submitted', label: 'New' },
+    { key: 'returned_for_correction', label: 'Sent back' },
     { key: 'processing', label: 'Awaiting approval' },
     { key: 'approved', label: 'Approved' },
     { key: 'rejected', label: 'Rejected' }
@@ -28,7 +29,9 @@ const FILTERS = [
 /**
  * Employee requests (spec §12): break-year, resignation, transfer and more.
  *
- * HR Expert processes and forwards; HR Manager approves or rejects.
+ * HR Expert processes and forwards - or sends the request back to the
+ * requester for correction (the Expert's only corrective action);
+ * HR Manager approves or rejects.
  */
 const RequestManagement = () => {
     const { can } = useAuth();
@@ -39,6 +42,8 @@ const RequestManagement = () => {
     const [busyId, setBusyId] = useState(null);
     const [rejectTarget, setRejectTarget] = useState(null);
     const [reason, setReason] = useState('');
+    const [returnTarget, setReturnTarget] = useState(null);
+    const [returnNote, setReturnNote] = useState('');
 
     const canProcess = can('request:process');
     const canApprove = can('request:approve');
@@ -68,6 +73,21 @@ const RequestManagement = () => {
             load();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Could not forward the request');
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const sendBack = async (request, note) => {
+        setBusyId(request._id);
+        try {
+            await api.put(`/requests/${request._id}/return`, { note });
+            toast.success('Request sent back to the requester for correction');
+            setReturnTarget(null);
+            setReturnNote('');
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not send the request back');
         } finally {
             setBusyId(null);
         }
@@ -145,6 +165,11 @@ const RequestManagement = () => {
                                                     {request.reason}
                                                 </div>
                                             )}
+                                            {request.returnReason && request.status === 'returned_for_correction' && (
+                                                <div className="mt-1" style={{ fontSize: '0.76rem', color: '#B45309' }}>
+                                                    Sent back: {request.returnReason}
+                                                </div>
+                                            )}
                                             {request.decisionReason && (
                                                 <div className="text-muted mt-1" style={{ fontSize: '0.76rem' }}>
                                                     Decision note: {request.decisionReason}
@@ -153,11 +178,18 @@ const RequestManagement = () => {
                                         </div>
                                         <div className="d-flex gap-2 flex-shrink-0 flex-wrap">
                                             {canProcess && isNew && (
-                                                <Button size="sm" variant="outline-primary" disabled={busyId === request._id}
-                                                        className="d-flex align-items-center gap-1"
-                                                        onClick={() => process(request)}>
-                                                    <FaPaperPlane size={10} /> Forward
-                                                </Button>
+                                                <>
+                                                    <Button size="sm" variant="outline-primary" disabled={busyId === request._id}
+                                                            className="d-flex align-items-center gap-1"
+                                                            onClick={() => process(request)}>
+                                                        <FaPaperPlane size={10} /> Forward
+                                                    </Button>
+                                                    <Button size="sm" variant="outline-warning" disabled={busyId === request._id}
+                                                            className="d-flex align-items-center gap-1"
+                                                            onClick={() => { setReturnTarget(request); setReturnNote(''); }}>
+                                                        <FaUndo size={10} /> Send Back
+                                                    </Button>
+                                                </>
                                             )}
                                             {canApprove && (isNew || awaiting) && (
                                                 <>
@@ -181,6 +213,27 @@ const RequestManagement = () => {
                     </div>
                 )}
             </Card>
+
+            <Modal show={!!returnTarget} onHide={() => setReturnTarget(null)} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title style={{ fontSize: '1.05rem' }}>Send back for correction</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+                        Explain what the requester should correct or clarify. They can fix
+                        the request and resubmit it - nothing is rejected.
+                    </p>
+                    <Form.Control as="textarea" rows={3} value={returnNote}
+                                  onChange={e => setReturnNote(e.target.value)} />
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="light" onClick={() => setReturnTarget(null)}>Cancel</Button>
+                    <Button variant="warning" disabled={!returnNote.trim()}
+                            onClick={() => sendBack(returnTarget, returnNote.trim())}>
+                        Send back
+                    </Button>
+                </Modal.Footer>
+            </Modal>
 
             <Modal show={!!rejectTarget} onHide={() => setRejectTarget(null)} centered>
                 <Modal.Header closeButton>

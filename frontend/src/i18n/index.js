@@ -368,6 +368,7 @@ const enTranslations = {
         "view_complaints": "View Complaints",
         "submit_complaint": "Submit New Complaint",
         "title_label": "Title",
+        "title_placeholder": "Brief summary of your complaint",
         "category": "Category",
         "category_placeholder": "Select category",
         "workplace": "Workplace",

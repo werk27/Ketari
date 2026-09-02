@@ -243,6 +243,16 @@ function AppContent() {
                         <Route path="profile" element={<Profile />} />
                         <Route path="complaints" element={<Complaints />} />
                         <Route path="delegation" element={<DelegationManagement />} />
+                        {/* Delegated Duties: pages an employee can temporarily reach
+                            while an ACTIVE delegation grants the matching capability
+                            (see navigationConfig delegatedDutiesSection). Rendering the
+                            route grants nothing - every API call behind these pages is
+                            still capability-checked by the backend. */}
+                        <Route path="leave" element={<LeaveManagement />} />
+                        <Route path="requests" element={<RequestManagement />} />
+                        <Route path="training" element={<TrainingManagement />} />
+                        <Route path="employees" element={<EmployeeDirectory />} />
+                        <Route path="complaints-management" element={<ComplaintsManagement />} />
                         {/* Job Requisitions: reachable by any employee account, but only
                             an employee assigned as a Department's Head can actually raise
                             one - see requisitionController.createRequisition. */}

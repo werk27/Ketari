@@ -124,8 +124,14 @@ export const AuthProvider = ({ children }) => {
             return { success: true, user };
         } catch (error) {
             const message = describeApiError(error, 'Login failed. Please try again.');
-            toast.error(message);
-            return { success: false, message };
+            const code = error.response?.data?.code;
+            // An employee on approved leave is informed, not warned of an error.
+            if (code === 'ON_LEAVE_ACCESS_BLOCKED') {
+                toast.info(message);
+            } else {
+                toast.error(message);
+            }
+            return { success: false, message, code, returnDate: error.response?.data?.returnDate };
         }
     };
 

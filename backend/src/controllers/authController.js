@@ -2,12 +2,13 @@ const User = require('../models/User');
 const Employer = require('../models/Employer');
 const Employee = require('../models/Employee');
 const { loadConfiguration, headedDepartments } = require('../services/departmentScope');
-const { resolveDelegatedCapabilities, getActiveDelegationsSummary } = require('../services/delegationCapabilities');
+const { resolveDelegationEffects, getActiveDelegationsSummary, getOutgoingDelegationsSummary } = require('../services/delegationCapabilities');
+const { getActiveLeaveBlock, buildLeaveBlockResponse } = require('../services/leaveAccess');
 const emailService = require('../services/emailService');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { validationResult } = require('express-validator');
-const { capabilitiesFor } = require('../config/permissions');
+const { capabilitiesFor, NON_DELEGABLE_CAPABILITIES } = require('../config/permissions');
 
 // Generate JWT Token
 // JWT_EXPIRE is optional: when it is missing jwt.sign throws, which would reject
@@ -46,15 +47,20 @@ const isDatabaseUnavailable = (error) => (
  * `_id` are exposed because call sites in the UI use either spelling.
  */
 const buildAuthPayload = async (user) => {
-    const delegated = await resolveDelegatedCapabilities(user);
+    const { granted, suspended } = await resolveDelegationEffects(user);
     const activeDelegations = await getActiveDelegationsSummary(user);
+    const outgoingDelegations = await getOutgoingDelegationsSummary(user);
     // Intrinsic capabilities only (role + any employer-granted overrides),
     // deliberately excluding anything currently borrowed via someone else's
-    // delegation. Used by the delegation form to offer only capabilities
-    // this user can legitimately hand further down - matching exactly what
-    // delegationController.createDelegation validates server-side, so a
-    // choice that looks valid in the UI is never rejected by the API.
-    const ownCapabilities = capabilitiesFor(user);
+    // delegation and ignoring any suspension. Used for display and for the
+    // delegation form's validation mirror.
+    const ownCapabilities = capabilitiesFor({ role: user.role, permissions: user.permissions });
+    // What this user may legitimately hand to a colleague: intrinsic minus
+    // the personal/ownership capabilities that can never be delegated -
+    // matching exactly what delegationController.createDelegation validates
+    // server-side, so a choice that looks valid in the UI is never rejected.
+    const suspendedSet = new Set(suspended);
+    const delegableCapabilities = ownCapabilities.filter(c => !NON_DELEGABLE_CAPABILITIES.includes(c));
     return {
         id: user._id,
         _id: user._id,
@@ -67,15 +73,22 @@ const buildAuthPayload = async (user) => {
         jobTitle: user.jobTitle || '',
         profile: user.profile,
         company: user.company,
-        // Merge role/employer-granted capabilities with anything temporarily
-        // inherited via an active delegation, so the frontend's own can()
-        // checks (which decide whether to even show an action button) agree
-        // with what the backend will actually allow.
-        capabilities: [...new Set([...ownCapabilities, ...delegated])],
+        // EFFECTIVE authority, mirroring exactly what the backend enforces:
+        // own capabilities minus anything currently delegated away, plus
+        // anything temporarily inherited via an active delegation - so the
+        // frontend's own can() checks (which decide whether to even show an
+        // action button) agree with what the API will actually allow.
+        capabilities: [...new Set([
+            ...ownCapabilities.filter(c => !suspendedSet.has(c)),
+            ...granted
+        ])],
         ownCapabilities,
-        // Display-only: lets the UI show "you're covering X until Y" so the
-        // extra capabilities above aren't a silent surprise to the user.
+        delegableCapabilities,
+        // Display-only banners: "you're covering X until Y" (incoming) and
+        // "you've handed X to Y until Z" (outgoing), so capabilities that
+        // appear or disappear are never a silent surprise to the user.
         activeDelegations,
+        outgoingDelegations,
         employment: await loadEmployment(user)
     };
 };
@@ -316,6 +329,17 @@ exports.login = async (req, res) => {
                 success: false,
                 message: 'Your account has been deactivated. Please contact the System Administrator.'
             });
+        }
+
+        // Business rule: an employee on approved leave that covers today must
+        // not be able to access the work system at all - that is the whole
+        // point of delegating their responsibilities to a colleague for the
+        // duration. The account itself is never disabled and nothing about
+        // the user's role/permissions changes; access resumes automatically
+        // the day after their leave ends, with no manual step.
+        const leaveBlock = await getActiveLeaveBlock(user);
+        if (leaveBlock) {
+            return res.status(403).json(buildLeaveBlockResponse(leaveBlock));
         }
 
         // Generate token

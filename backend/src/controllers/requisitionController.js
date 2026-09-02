@@ -7,6 +7,7 @@ const User = require('../models/User');
 const notificationService = require('../services/notificationService');
 const { buildFieldsFromRequisition } = require('../services/requisitionSync');
 const { headedDepartments } = require('../services/departmentScope');
+const { resolveActingForDelegators } = require('../services/delegationCapabilities');
 const { CAPABILITIES, userCan } = require('../config/permissions');
 
 /**
@@ -143,20 +144,41 @@ const resolveDepartmentAndPosition = async (req, body) => {
  *   - the Employer (org owner - can raise for any department)
  *   - the Department Head: the specific user assigned as that department's
  *     `manager` in Configuration (see configController's department validator)
+ *   - the assigned head's ACTIVE DELEGATE: heading a department is
+ *     identity-bound, so while the head has an in-effect delegation covering
+ *     'requisition:create' (or full role), the delegate temporarily counts
+ *     as the head. The delegate acts under their own identity, and the
+ *     head's own capability is suspended for the same period.
  *
  * HR Expert is deliberately excluded here even though it holds broad
  * `requisition:create`-adjacent responsibilities elsewhere - its role is to
  * REVIEW a requisition someone else originated (requisition:process), never
  * to be both the requester and the reviewer of its own request.
  */
-const resolveRequisitionAuthorization = (req, departmentManagerId) => {
+const resolveRequisitionAuthorization = async (req, departmentManagerId) => {
     if (req.user.role === 'employer') return null;
 
-    if (!departmentManagerId || departmentManagerId.toString() !== req.user.id) {
+    if (!departmentManagerId) {
         return 'Only the Employer or this department\'s assigned Department Head may raise a requisition for it.';
     }
+    if (departmentManagerId.toString() === req.user.id) return null;
 
-    return null;
+    const actingFor = await resolveActingForDelegators(req.user, CAPABILITIES.REQUISITION_CREATE);
+    if (actingFor.includes(departmentManagerId.toString())) return null;
+
+    return 'Only the Employer or this department\'s assigned Department Head may raise a requisition for it.';
+};
+
+/**
+ * May this user act on a requisition owned by `requestedBy`? True for the
+ * requester themselves, and for a colleague currently covering the
+ * requester's requisition responsibility through an in-effect delegation -
+ * so an in-flight requisition never stalls while its owner is away.
+ */
+const canActForRequester = async (req, requestedById) => {
+    if (requestedById.toString() === req.user.id) return true;
+    const actingFor = await resolveActingForDelegators(req.user, CAPABILITIES.REQUISITION_CREATE);
+    return actingFor.includes(requestedById.toString());
 };
 
 // @desc    Raise a job requisition (draft, or submitted directly)
@@ -184,7 +206,7 @@ exports.createRequisition = async (req, res) => {
             return res.status(400).json({ success: false, message: resolved.error });
         }
 
-        const authError = resolveRequisitionAuthorization(req, resolved.departmentManager);
+        const authError = await resolveRequisitionAuthorization(req, resolved.departmentManager);
         if (authError) {
             return res.status(403).json({ success: false, message: authError });
         }
@@ -252,7 +274,19 @@ exports.createRequisition = async (req, res) => {
             status: shouldSubmit ? 'submitted' : 'draft'
         });
 
-        recordAudit(requisition, requisition.status, req.user.id, shouldSubmit ? 'Requisition submitted' : 'Draft created');
+        // Audit: the delegate acts under their OWN identity, but the record
+        // notes when the creation happened under an active delegation from
+        // the department's assigned head.
+        const actingUnderDelegation = req.user.role !== 'employer'
+            && resolved.departmentManager
+            && resolved.departmentManager.toString() !== req.user.id;
+        recordAudit(
+            requisition,
+            requisition.status,
+            req.user.id,
+            (shouldSubmit ? 'Requisition submitted' : 'Draft created')
+                + (actingUnderDelegation ? ' (acting under delegation from the department\'s assigned head)' : '')
+        );
         await requisition.save();
 
         if (shouldSubmit) {
@@ -302,11 +336,18 @@ exports.getRequisitions = async (req, res) => {
 
         // An Employer/HR Expert who only raises requisitions does not need to
         // see other requesters' private drafts; everything past 'draft' is
-        // organization-wide so HR can pick up the work.
+        // organization-wide so HR can pick up the work. A colleague currently
+        // covering a requester through an active delegation may also see that
+        // requester's drafts, so in-flight work never stalls while its owner
+        // is away.
         if (req.query.mine === 'true') {
             query.requestedBy = req.user.id;
         } else if (req.user.role !== 'hr_manager') {
-            query.$or = [{ status: { $ne: 'draft' } }, { requestedBy: req.user.id }];
+            const actingFor = await resolveActingForDelegators(req.user, CAPABILITIES.REQUISITION_CREATE);
+            query.$or = [
+                { status: { $ne: 'draft' } },
+                { requestedBy: { $in: [req.user.id, ...actingFor] } }
+            ];
         }
 
         const requisitions = await JobRequisition.find(query)
@@ -373,8 +414,8 @@ exports.updateRequisition = async (req, res) => {
         const { requisition, error } = await findScopedRequisition(req.params.id, req);
         if (error) return res.status(error.code).json({ success: false, message: error.message });
 
-        if (requisition.requestedBy.toString() !== req.user.id) {
-            return res.status(403).json({ success: false, message: 'Only the requester can edit this requisition' });
+        if (!(await canActForRequester(req, requisition.requestedBy))) {
+            return res.status(403).json({ success: false, message: 'Only the requester (or their active delegate) can edit this requisition' });
         }
 
         if (!['draft', 'returned', 'rejected'].includes(requisition.status)) {
@@ -393,7 +434,7 @@ exports.updateRequisition = async (req, res) => {
             // a Department Head may edit their own draft, but never reassign
             // it to a department they do not head.
             if (String(resolved.department) !== String(requisition.department)) {
-                const authError = resolveRequisitionAuthorization(req, resolved.departmentManager);
+                const authError = await resolveRequisitionAuthorization(req, resolved.departmentManager);
                 if (authError) return res.status(403).json({ success: false, message: authError });
             }
 
@@ -440,8 +481,8 @@ exports.submitRequisition = async (req, res) => {
         const { requisition, error } = await findScopedRequisition(req.params.id, req);
         if (error) return res.status(error.code).json({ success: false, message: error.message });
 
-        if (requisition.requestedBy.toString() !== req.user.id) {
-            return res.status(403).json({ success: false, message: 'Only the requester can submit this requisition' });
+        if (!(await canActForRequester(req, requisition.requestedBy))) {
+            return res.status(403).json({ success: false, message: 'Only the requester (or their active delegate) can submit this requisition' });
         }
 
         if (!['draft', 'returned', 'rejected'].includes(requisition.status)) {
@@ -545,10 +586,10 @@ exports.respondToClarification = async (req, res) => {
         const { requisition, error } = await findScopedRequisition(req.params.id, req);
         if (error) return res.status(error.code).json({ success: false, message: error.message });
 
-        if (requisition.requestedBy.toString() !== req.user.id) {
+        if (!(await canActForRequester(req, requisition.requestedBy))) {
             return res.status(403).json({
                 success: false,
-                message: 'Only the requester can respond to this clarification'
+                message: 'Only the requester (or their active delegate) can respond to this clarification'
             });
         }
 

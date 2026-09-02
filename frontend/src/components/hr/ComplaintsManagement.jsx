@@ -15,6 +15,13 @@ const NEXT_STATUS = [
     { key: 'resolved', label: 'Resolve' }
 ];
 
+// Canonical order used to work out which stages still lie ahead of the
+// complaint's current status. The backend does not itself enforce this order
+// (an HR user may jump straight to any later stage), but the buttons should
+// only ever offer to move forward, never back - and "Resolve" must stay
+// reachable from every stage, including the last ones, not just the first two.
+const WORKFLOW_ORDER = ['pending', 'submitted', 'under_review', 'investigating', 'responded', 'resolved'];
+
 /**
  * Complaint handling (spec §18).
  *
@@ -26,7 +33,8 @@ const ComplaintsManagement = () => {
     const [complaints, setComplaints] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [resolveTarget, setResolveTarget] = useState(null);
+    // { complaint, kind: 'resolved' | 'rejected' }
+    const [actionTarget, setActionTarget] = useState(null);
     const [resolution, setResolution] = useState('');
     const [busyId, setBusyId] = useState(null);
 
@@ -52,7 +60,7 @@ const ComplaintsManagement = () => {
         try {
             await api.put(`/complaints/${complaint._id}/status`, { status, resolution: resolutionNote });
             toast.success(`Complaint marked ${status.replace('_', ' ')}`);
-            setResolveTarget(null);
+            setActionTarget(null);
             setResolution('');
             load();
         } catch (err) {
@@ -111,18 +119,23 @@ const ComplaintsManagement = () => {
                                     {canHandle && !['resolved', 'rejected'].includes(complaint.status) && (
                                         <div className="d-flex gap-2 flex-shrink-0 flex-wrap">
                                             {NEXT_STATUS
-                                                .filter(s => s.key !== complaint.status)
-                                                .slice(0, 2)
+                                                .filter(s => WORKFLOW_ORDER.indexOf(s.key) > WORKFLOW_ORDER.indexOf(complaint.status))
                                                 .map(s => (
                                                     <Button key={s.key} size="sm"
                                                             variant={s.key === 'resolved' ? 'success' : 'outline-secondary'}
                                                             disabled={busyId === complaint._id}
-                                                            onClick={() => s.key === 'resolved'
-                                                                ? (setResolveTarget(complaint), setResolution(''))
+                                                            onClick={() => ['resolved', 'responded'].includes(s.key)
+                                                                // Responding/resolving is the FEEDBACK the complainant
+                                                                // reads on their own page - always collect the note.
+                                                                ? (setActionTarget({ complaint, kind: s.key }), setResolution(''))
                                                                 : setStatus(complaint, s.key)}>
                                                         {s.label}
                                                     </Button>
                                                 ))}
+                                            <Button size="sm" variant="outline-danger" disabled={busyId === complaint._id}
+                                                    onClick={() => (setActionTarget({ complaint, kind: 'rejected' }), setResolution(''))}>
+                                                Reject
+                                            </Button>
                                         </div>
                                     )}
                                 </div>
@@ -132,22 +145,33 @@ const ComplaintsManagement = () => {
                 )}
             </Card>
 
-            <Modal show={!!resolveTarget} onHide={() => setResolveTarget(null)} centered>
+            <Modal show={!!actionTarget} onHide={() => setActionTarget(null)} centered>
                 <Modal.Header closeButton>
-                    <Modal.Title style={{ fontSize: '1.05rem' }}>Resolve complaint</Modal.Title>
+                    <Modal.Title style={{ fontSize: '1.05rem' }}>
+                        {actionTarget?.kind === 'rejected' ? 'Reject complaint'
+                            : actionTarget?.kind === 'responded' ? 'Respond to complaint'
+                                : 'Resolve complaint'}
+                    </Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
                     <p className="text-muted" style={{ fontSize: '0.85rem' }}>
-                        Record how this complaint was resolved. The complainant sees this note.
+                        {actionTarget?.kind === 'rejected'
+                            ? 'Explain why this complaint is not being upheld. The complainant sees this note.'
+                            : actionTarget?.kind === 'responded'
+                                ? 'Write your response/feedback. The complainant sees it on their Complaints page.'
+                                : 'Record how this complaint was resolved. The complainant sees this note.'}
                     </p>
                     <Form.Control as="textarea" rows={3} value={resolution}
                                   onChange={e => setResolution(e.target.value)} />
                 </Modal.Body>
                 <Modal.Footer>
-                    <Button variant="light" onClick={() => setResolveTarget(null)}>Cancel</Button>
-                    <Button variant="success" disabled={!resolution.trim()}
-                            onClick={() => setStatus(resolveTarget, 'resolved', resolution.trim())}>
-                        Resolve
+                    <Button variant="light" onClick={() => setActionTarget(null)}>Cancel</Button>
+                    <Button variant={actionTarget?.kind === 'rejected' ? 'danger' : 'success'}
+                            disabled={actionTarget?.kind !== 'rejected' && !resolution.trim()}
+                            onClick={() => setStatus(actionTarget.complaint, actionTarget.kind, resolution.trim())}>
+                        {actionTarget?.kind === 'rejected' ? 'Reject'
+                            : actionTarget?.kind === 'responded' ? 'Send response'
+                                : 'Resolve'}
                     </Button>
                 </Modal.Footer>
             </Modal>

@@ -6,6 +6,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import api, { getImageUrl } from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import './Profile.css';
 
 const Profile = () => {
@@ -19,6 +20,10 @@ const Profile = () => {
     const [profilePhoto, setProfilePhoto] = useState(user?.profile?.profilePhoto || null);
     const [previewPhoto, setPreviewPhoto] = useState(null);
     const [imageError, setImageError] = useState(false);
+    const [showRemovePhotoConfirm, setShowRemovePhotoConfirm] = useState(false);
+    const [removingPhoto, setRemovingPhoto] = useState(false);
+    const [deleteResumeTarget, setDeleteResumeTarget] = useState(null);
+    const [deletingResume, setDeletingResume] = useState(false);
 
     useEffect(() => {
         if (user?.profile?.profilePhoto) {
@@ -191,8 +196,10 @@ const Profile = () => {
         }
     };
 
-    const handleRemovePhoto = async () => {
-        if (!window.confirm('Are you sure you want to remove your profile photo?')) return;
+    const handleRemovePhoto = () => setShowRemovePhotoConfirm(true);
+
+    const confirmRemovePhoto = async () => {
+        setRemovingPhoto(true);
         try {
             await api.delete('/upload/profile-photo');
             setProfilePhoto(null);
@@ -206,11 +213,14 @@ const Profile = () => {
                 }
             }));
             toast.success('Profile photo removed');
+            setShowRemovePhotoConfirm(false);
             if (reloadUser) {
                 await reloadUser();
             }
         } catch (error) {
             toast.error('Failed to remove photo');
+        } finally {
+            setRemovingPhoto(false);
         }
     };
 
@@ -397,14 +407,20 @@ const Profile = () => {
         }
     };
 
-    const handleDeleteResume = async (resumeId) => {
-        if (!window.confirm('Are you sure you want to delete this resume?')) return;
+    const handleDeleteResume = (resume) => setDeleteResumeTarget(resume);
+
+    const confirmDeleteResume = async () => {
+        if (!deleteResumeTarget) return;
+        setDeletingResume(true);
         try {
-            await api.delete(`/resumes/${resumeId}`);
-            setResumes(resumes.filter(r => r._id !== resumeId));
+            await api.delete(`/resumes/${deleteResumeTarget._id}`);
+            setResumes(resumes.filter(r => r._id !== deleteResumeTarget._id));
             toast.success('Resume deleted');
+            setDeleteResumeTarget(null);
         } catch (error) {
             toast.error('Failed to delete resume');
+        } finally {
+            setDeletingResume(false);
         }
     };
 
@@ -820,7 +836,7 @@ const Profile = () => {
                                                                 </td>
                                                                 <td className="text-end">
                                                                     <a href={getImageUrl(r.filePath)} target="_blank" rel="noreferrer" className="btn btn-light btn-sm me-2">Download</a>
-                                                                    <Button variant="outline-danger" size="sm" onClick={() => handleDeleteResume(r._id)}><FaTrash /></Button>
+                                                                    <Button variant="outline-danger" size="sm" onClick={() => handleDeleteResume(r)}><FaTrash /></Button>
                                                                 </td>
                                                             </tr>
                                                         ))}
@@ -835,6 +851,26 @@ const Profile = () => {
                     </Col>
                 </Row>
             </Container>
+
+            <ConfirmDeleteModal
+                show={showRemovePhotoConfirm}
+                title="Remove profile photo?"
+                description="You can upload a new one at any time."
+                confirmLabel="Remove photo"
+                busyLabel="Removing…"
+                busy={removingPhoto}
+                onCancel={() => setShowRemovePhotoConfirm(false)}
+                onConfirm={confirmRemovePhoto}
+            />
+
+            <ConfirmDeleteModal
+                show={!!deleteResumeTarget}
+                title="Delete resume?"
+                itemName={deleteResumeTarget?.originalName}
+                busy={deletingResume}
+                onCancel={() => setDeleteResumeTarget(null)}
+                onConfirm={confirmDeleteResume}
+            />
         </section>
     );
 };

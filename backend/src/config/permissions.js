@@ -69,7 +69,15 @@ const CAPABILITIES = {
 
     // ---------- Delegation ----------
     DELEGATION_VIEW: 'delegation:view',
+    // Direct grant (skips review stages, still needs delegate acceptance).
     DELEGATION_CREATE: 'delegation:create',
+    // Raise a delegation REQUEST that must pass HR Expert validation and
+    // HR Manager approval before the delegate is even asked to accept.
+    DELEGATION_REQUEST: 'delegation:request',
+    // HR Expert validation gate: validate / return for correction / reject.
+    DELEGATION_PROCESS: 'delegation:process',
+    // HR Manager final approval: approve / reject validated requests.
+    DELEGATION_APPROVE: 'delegation:approve',
 
     // ---------- Attendance ----------
     ATTENDANCE_SELF: 'attendance:self',
@@ -139,7 +147,7 @@ const HR_EXPERT_CAPABILITIES = [
     C.LEAVE_VIEW, C.LEAVE_PROCESS, C.LEAVE_REQUEST,
     C.REQUEST_VIEW, C.REQUEST_PROCESS, C.REQUEST_RAISE,
     C.TRAINING_VIEW, C.TRAINING_RECORD, C.TRAINING_PARTICIPATE,
-    C.DELEGATION_VIEW,
+    C.DELEGATION_VIEW, C.DELEGATION_REQUEST, C.DELEGATION_PROCESS,
     C.ATTENDANCE_SELF, C.ATTENDANCE_VIEW, C.ATTENDANCE_RECORD,
     C.COMPLAINT_RAISE, C.COMPLAINT_VIEW, C.COMPLAINT_HANDLE,
     C.DOCUMENT_SELF, C.DOCUMENT_VIEW, C.DOCUMENT_MANAGE,
@@ -162,7 +170,7 @@ const HR_MANAGER_CAPABILITIES = [
     C.LEAVE_VIEW, C.LEAVE_APPROVE, C.LEAVE_REQUEST,
     C.REQUEST_VIEW, C.REQUEST_APPROVE, C.REQUEST_RAISE,
     C.TRAINING_VIEW, C.TRAINING_APPROVE,
-    C.DELEGATION_VIEW, C.DELEGATION_CREATE,
+    C.DELEGATION_VIEW, C.DELEGATION_CREATE, C.DELEGATION_APPROVE,
     C.ATTENDANCE_SELF, C.ATTENDANCE_VIEW,
     C.COMPLAINT_VIEW, C.COMPLAINT_HANDLE, C.COMPLAINT_RAISE,
     C.DOCUMENT_SELF, C.DOCUMENT_VIEW,
@@ -177,6 +185,11 @@ const EMPLOYEE_CAPABILITIES = [
     C.ATTENDANCE_SELF,
     C.COMPLAINT_RAISE,
     C.DOCUMENT_SELF,
+    // Propose delegating a responsibility they intrinsically hold. This only
+    // opens a REQUEST that must pass HR Expert validation, HR Manager
+    // approval and the delegate's acceptance before anything takes effect -
+    // see delegationController.createDelegation.
+    C.DELEGATION_REQUEST,
     // Being hired does not end a job search. Without these an employee loses
     // sight of applications they already made to other organizations and
     // cannot even withdraw them.
@@ -222,7 +235,7 @@ const ROLE_CAPABILITIES = {
         // role) but never processes or approves them - that stays with HR.
         C.REQUISITION_CREATE, C.REQUISITION_VIEW,
         C.LEAVE_VIEW, C.REQUEST_VIEW, C.TRAINING_VIEW,
-        C.DELEGATION_VIEW, C.DELEGATION_CREATE,
+        C.DELEGATION_VIEW, C.DELEGATION_CREATE, C.DELEGATION_APPROVE,
         C.ATTENDANCE_VIEW, C.COMPLAINT_VIEW, C.DOCUMENT_VIEW,
         C.REPORT_EMPLOYER, C.REPORT_RECRUITMENT, C.REPORT_HR
     ],
@@ -251,16 +264,49 @@ const HR_ROLES = ['hr_expert', 'hr_manager'];
 const EMPLOYER_MANAGEABLE_ROLES = ['hr_expert', 'hr_manager', 'employee'];
 
 /**
- * Resolve every capability a user holds: role baseline + employer-granted overrides
- * + anything temporarily inherited via an active delegation (see auth.js `protect`,
- * which attaches `delegatedCapabilities` before this runs).
+ * Capabilities that can never be part of a delegation transfer, in either
+ * direction: they are personal self-service rights (nobody can request YOUR
+ * leave for you, and going on leave must never take away your access to your
+ * own records) or organization-ownership powers whose transfer would let a
+ * delegate permanently escalate themselves (org:team could grant roles,
+ * org:config could reassign department heads). Full-role delegation transfers
+ * everything EXCEPT these, and delegator suspension never touches them.
+ */
+const NON_DELEGABLE_CAPABILITIES = [
+    C.LEAVE_REQUEST,
+    C.REQUEST_RAISE,
+    C.TRAINING_PARTICIPATE,
+    C.ATTENDANCE_SELF,
+    C.COMPLAINT_RAISE,
+    C.DOCUMENT_SELF,
+    C.JOB_SEEK,
+    C.JOB_SEEK_PROFILE,
+    C.ORG_MANAGE,
+    C.ORG_TEAM_MANAGE,
+    C.ORG_CONFIG
+];
+
+/**
+ * Resolve every capability a user currently holds:
+ *   (role baseline + employer-granted overrides
+ *      - anything currently delegated AWAY to a colleague)
+ *   + anything temporarily inherited via an active delegation.
+ *
+ * Delegation is a temporary SUBSTITUTION of responsibility, not shared
+ * access: while a delegation is in effect the delegator cannot exercise the
+ * delegated capabilities themselves (see auth.js `protect`, which attaches
+ * both `delegatedCapabilities` and `delegatedAwayCapabilities` before this
+ * runs). Capabilities borrowed from someone ELSE are never suspended - only
+ * the user's own are.
  */
 function capabilitiesFor(user) {
     if (!user || !user.role) return [];
     const base = ROLE_CAPABILITIES[user.role] || [];
     const extra = Array.isArray(user.permissions) ? user.permissions : [];
     const delegated = Array.isArray(user.delegatedCapabilities) ? user.delegatedCapabilities : [];
-    return [...new Set([...base, ...extra, ...delegated])];
+    const suspended = new Set(Array.isArray(user.delegatedAwayCapabilities) ? user.delegatedAwayCapabilities : []);
+    const own = [...new Set([...base, ...extra])].filter(c => !suspended.has(c));
+    return [...new Set([...own, ...delegated])];
 }
 
 function userCan(user, capability) {
@@ -273,6 +319,7 @@ module.exports = {
     ORG_ROLES,
     HR_ROLES,
     EMPLOYER_MANAGEABLE_ROLES,
+    NON_DELEGABLE_CAPABILITIES,
     capabilitiesFor,
     userCan
 };

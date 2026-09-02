@@ -170,12 +170,16 @@ const RequisitionForm = () => {
 
     // A Department Head (any non-employer account) may only raise a
     // requisition for the department(s) they are assigned to head - the
-    // Employer may raise for any department. Enforced again server-side
-    // regardless; this just keeps the dropdown from offering a choice that
-    // would only fail later.
+    // Employer may raise for any department. `employment.headOfDepartments`
+    // comes from the backend auth payload and already includes departments
+    // this user temporarily covers as an active delegate of the assigned
+    // head. Enforced again server-side regardless; this just keeps the
+    // dropdown from offering a choice that would only fail later.
+    const headedIds = (user?.employment?.headOfDepartments || []).map(h => String(h.id));
     const selectableDepartments = user?.role === 'employer'
         ? config.departments
-        : config.departments.filter(d => String(d.manager) === String(user?.id));
+        : config.departments.filter(d =>
+            String(d.manager) === String(user?.id) || headedIds.includes(String(d._id)));
 
     const loadConfig = useCallback(async () => {
         try {

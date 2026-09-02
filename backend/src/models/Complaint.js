@@ -38,7 +38,7 @@ const ComplaintSchema = new mongoose.Schema({
         enum: [
             'harassment', 'discrimination', 'work_environment', 'salary', 'benefits',
             'management', 'application_issue', 'interview_concern', 'process_feedback',
-            'technical', 'other'
+            'equipment', 'technical', 'other'
         ],
         required: true
     },

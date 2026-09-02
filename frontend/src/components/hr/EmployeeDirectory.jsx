@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { FaUsers, FaPlus, FaSearch, FaUserShield, FaUserCog } from 'react-icons/fa';
 import api, { describeApiError } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -80,6 +81,8 @@ const EmployeeDirectory = () => {
     const [sendRoleCredentials, setSendRoleCredentials] = useState(true);
     const [roleBusy, setRoleBusy] = useState(false);
     const [resendBusy, setResendBusy] = useState(false);
+    const [terminateTarget, setTerminateTarget] = useState(null);
+    const [terminating, setTerminating] = useState(false);
 
     const canRecord = can('employee:record');
     const canManageTeam = can('org:team');
@@ -142,6 +145,18 @@ const EmployeeDirectory = () => {
         if (!rankId) return null;
         const rawRankId = rankId._id || rankId;
         return (config.positionRanks || []).find(r => r._id === rawRankId)?.name || null;
+    };
+
+    // Being a Department Head is not an account role (see the Role column) -
+    // it's recorded as Configuration.departments[].manager and is what
+    // authorises someone to raise Job Requisitions for that department (see
+    // requisitionController / authController's loadEmployment). A department
+    // has at most one head, but one person may head more than one department,
+    // so this is never reflected anywhere unless it's looked up here too.
+    const headedDepartments = (person) => {
+        const userId = person?.user?._id || person?.user;
+        if (!userId) return [];
+        return config.departments.filter(d => d.manager && String(d.manager) === String(userId));
     };
 
     // Anyone with a linked account can be picked as a supervisor.
@@ -216,15 +231,22 @@ const EmployeeDirectory = () => {
         }
     };
 
-    const terminate = async (employee) => {
-        if (!window.confirm(`Mark ${fullName(employee)} as terminated? Their record is kept for history.`)) return;
+    const terminate = (employee) => setTerminateTarget(employee);
+
+    const confirmTerminate = async () => {
+        if (!terminateTarget) return;
+        setTerminating(true);
         try {
-            await api.delete(`/employees/${employee._id}`);
+            await api.delete(`/employees/${terminateTarget._id}`);
             toast.success('Employee marked as terminated');
+            const terminatedId = terminateTarget._id;
+            setTerminateTarget(null);
             load();
-            if (profileId === employee._id) openProfile(employee._id);
+            if (profileId === terminatedId) openProfile(terminatedId);
         } catch (err) {
             toast.error(describeApiError(err, 'Could not update this employee'));
+        } finally {
+            setTerminating(false);
         }
     };
 
@@ -439,6 +461,15 @@ const EmployeeDirectory = () => {
                                         <td className="text-muted" style={{ fontSize: '0.82rem' }}>{employee.employeeId}</td>
                                         <td className="text-muted" style={{ fontSize: '0.82rem' }}>
                                             {departmentName(employee.employmentInfo?.department)}
+                                            {headedDepartments(employee).length > 0 && (
+                                                <div className="mt-1">
+                                                    <span className="badge bg-success-subtle text-success d-inline-flex align-items-center gap-1"
+                                                          style={{ fontSize: '0.66rem', fontWeight: 600 }}
+                                                          title={`Department Head of: ${headedDepartments(employee).map(d => d.name).join(', ')}`}>
+                                                        <FaUserShield size={9} /> Dept. Head
+                                                    </span>
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="text-muted" style={{ fontSize: '0.82rem' }}>
                                             {positionTitle(employee.employmentInfo?.position) !== '—'
@@ -653,7 +684,8 @@ const EmployeeDirectory = () => {
                                         ['Hire date', profile.employmentInfo?.hireDate
                                             ? new Date(profile.employmentInfo.hireDate).toLocaleDateString() : null],
                                         ['Account', profile.user ? `${profile.user.email} (${profile.user.status})` : 'No account linked'],
-                                        ['Organizational role', profile.user ? roleLabel(profile.user.role) : '—']
+                                        ['Organizational role', profile.user ? roleLabel(profile.user.role) : '—'],
+                                        ['Department Head of', headedDepartments(profile).map(d => d.name).join(', ') || null]
                                     ].map(([label, value]) => (
                                         <Col md={6} key={label}>
                                             <div className="text-uppercase text-muted"
@@ -904,6 +936,16 @@ const EmployeeDirectory = () => {
                                             </div>
                                         </div>
 
+                                            {headedDepartments(profile).length > 0 && (
+                                                <div className="alert alert-success py-2 px-3 mb-3" style={{ fontSize: '0.82rem' }}>
+                                                    <FaUserShield className="me-2" />
+                                                    Also the assigned <strong>Department Head</strong> of{' '}
+                                                    <strong>{headedDepartments(profile).map(d => d.name).join(', ')}</strong>
+                                                    {' '}- set in Configuration, not a separate role. This lets them raise Job
+                                                    Requisitions for that department regardless of their role above.
+                                                </div>
+                                            )}
+
                                         {canManageTeam ? (
                                             <Form onSubmit={submitRole} className="border rounded p-3" style={{ maxWidth: 420 }}>
                                                 <Form.Group className="mb-3">
@@ -941,6 +983,18 @@ const EmployeeDirectory = () => {
                     )}
                 </Modal.Body>
             </Modal>
+
+            <ConfirmDeleteModal
+                show={!!terminateTarget}
+                title="Terminate employee?"
+                itemName={terminateTarget ? fullName(terminateTarget) : ''}
+                description="Their record is kept for history."
+                confirmLabel="Mark terminated"
+                busyLabel="Terminating…"
+                busy={terminating}
+                onCancel={() => setTerminateTarget(null)}
+                onConfirm={confirmTerminate}
+            />
         </div>
     );
 };

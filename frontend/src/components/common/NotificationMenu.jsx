@@ -15,9 +15,16 @@ const NotificationMenu = () => {
 
     useEffect(() => {
         fetchNotifications();
-        // Poll every 60 seconds
-        const interval = setInterval(fetchNotifications, 60000);
-        return () => clearInterval(interval);
+        // Poll every 30 seconds so the badge follows new notifications closely.
+        const interval = setInterval(fetchNotifications, 30000);
+        // Refresh immediately when the user returns to the tab - otherwise the
+        // badge showed a stale count until the next poll tick.
+        const onFocus = () => fetchNotifications();
+        window.addEventListener('focus', onFocus);
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('focus', onFocus);
+        };
     }, []);
 
     const fetchNotifications = async () => {
@@ -34,8 +41,13 @@ const NotificationMenu = () => {
 
     const handleToggle = (nextOpen) => {
         setIsOpen(nextOpen);
-        if (nextOpen && notifications.length === 0) {
-            setLoading(true);
+        // Always refetch on open: only fetching when the list was empty left
+        // both the list and the unread badge stale until the next poll.
+        // Deliberately NO bulk mark-as-read here: only a notification the
+        // user actually views (row click or "View details") is marked read,
+        // so the badge always reflects what is genuinely still unread.
+        if (nextOpen) {
+            setLoading(notifications.length === 0);
             fetchNotifications().finally(() => setLoading(false));
         }
     };
@@ -76,6 +88,8 @@ const NotificationMenu = () => {
             case 'requisition_approved': case 'requisition_job_created': return <FaClipboardList className="text-success" />;
             case 'requisition_rejected': return <FaClipboardList className="text-danger" />;
             case 'leave_request': case 'leave_decision': return <FaUserClock className="text-warning" />;
+            case 'leave_returned': return <FaUserClock className="text-danger" />;
+            case 'vacancy_filled': return <FaBriefcase className="text-success" />;
             case 'request_submitted': case 'request_decision': return <FaUserCog className="text-info" />;
             case 'training_assigned': case 'training_decision': return <FaGraduationCap className="text-primary" />;
             case 'employer_registered': return <FaBuilding className="text-warning" />;
@@ -103,7 +117,7 @@ const NotificationMenu = () => {
                             transform: 'translate(25%, -25%)'
                         }}
                     >
-                        {unreadCount > 9 ? '9+' : unreadCount}
+                        {unreadCount > 99 ? '99+' : unreadCount}
                     </Badge>
                 )}
             </Dropdown.Toggle>
@@ -174,7 +188,14 @@ const NotificationMenu = () => {
                                                 to={notif.link} 
                                                 className="small text-decoration-none"
                                                 style={{ fontSize: '0.75rem' }}
-                                                onClick={(e) => e.stopPropagation()}
+                                                onClick={(e) => {
+                                                    // Following the notification counts as reading it -
+                                                    // stopPropagation used to skip the row's markAsRead,
+                                                    // leaving the item highlighted as new forever.
+                                                    e.stopPropagation();
+                                                    if (!notif.read) markAsRead(notif._id);
+                                                    setIsOpen(false);
+                                                }}
                                             >
                                                 View details
                                             </Link>

@@ -12,6 +12,15 @@ const Configuration = require('../models/Configuration');
  * Every helper here resolves that standing from the organization's own
  * Configuration, so it is always the tenant's current, authoritative answer
  * rather than something cached on the user account that could drift.
+ *
+ * Delegation: heading a department is an IDENTITY-BOUND responsibility, so a
+ * plain capability transfer cannot cover it. While a department's assigned
+ * head has an in-effect delegation naming another member as delegate (full
+ * role, or specifically including 'requisition:create'), that delegate
+ * temporarily counts as heading the department too - and because the
+ * delegator's own 'requisition:create' capability is suspended for the same
+ * period (see delegationCapabilities.js), the responsibility moves rather
+ * than being shared. The assignment in Configuration itself never changes.
  */
 
 const sameId = (a, b) => !!a && !!b && String(a) === String(b);
@@ -27,7 +36,8 @@ const loadConfiguration = (employerId) =>
     Configuration.findOne({ employer: employerId }).select('departments positions positionRanks').lean();
 
 /**
- * Departments this user heads inside `employerId`.
+ * Departments this user currently heads inside `employerId` - either by
+ * direct assignment or as the active delegate of an assigned head.
  *
  * Returns the department sub-documents themselves so callers get the name,
  * code and description without a second read.
@@ -38,7 +48,25 @@ const headedDepartments = async (user, employerId, config = undefined) => {
     const configuration = config === undefined ? await loadConfiguration(employerId) : config;
     if (!configuration || !Array.isArray(configuration.departments)) return [];
 
-    return configuration.departments.filter(d => isUsable(d) && sameId(d.manager, user._id || user.id));
+    const usable = configuration.departments.filter(isUsable);
+    const own = usable.filter(d => sameId(d.manager, user._id || user.id));
+
+    // Cover for any assigned head who currently delegates this
+    // responsibility to this user. Required lazily to avoid import cycles.
+    const { resolveActingForDelegators } = require('./delegationCapabilities');
+    const { CAPABILITIES } = require('../config/permissions');
+    const actingFor = await resolveActingForDelegators(user, CAPABILITIES.REQUISITION_CREATE);
+    const covered = actingFor.length === 0
+        ? []
+        : usable.filter(d => d.manager && actingFor.includes(String(d.manager)));
+
+    const seen = new Set();
+    return [...own, ...covered].filter(d => {
+        const key = String(d._id);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 };
 
 /** Positions configured under the given departments. */

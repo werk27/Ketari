@@ -8,6 +8,10 @@ const mongoose = require('mongoose');
  *
  * Workflow (see spec §12 / §32):
  *   submitted -> processing (HR Expert) -> approved | rejected (HR Manager) -> completed
+ *   with a detour: the HR Expert may send a submitted request back to the
+ *   requester (returned_for_correction) who fixes and resubmits it - the
+ *   Expert's only corrective action; terminal rejection stays with the
+ *   HR Manager, mirroring the Leave workflow.
  *
  * Separation of duties is enforced in the controller: the person who processes
  * a request may never be the person who approves it.
@@ -63,9 +67,16 @@ const EmployeeRequestSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ['submitted', 'processing', 'approved', 'rejected', 'completed', 'cancelled'],
+        enum: ['submitted', 'returned_for_correction', 'processing', 'approved', 'rejected', 'completed', 'cancelled'],
         default: 'submitted',
         index: true
+    },
+
+    // Set by the HR Expert when returning the request to the requester for
+    // correction. Cleared once the requester resubmits (mirrors Leave).
+    returnReason: {
+        type: String,
+        default: ''
     },
 
     // HR Expert who processed and forwarded the request

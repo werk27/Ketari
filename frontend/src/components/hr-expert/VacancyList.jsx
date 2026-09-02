@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Modal } from 'react-bootstrap';
+import { Button } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaBriefcase, FaPlusCircle, FaPaperPlane, FaEdit, FaUsers, FaRobot, FaTrash } from 'react-icons/fa';
+import { FaBriefcase, FaPlusCircle, FaPaperPlane, FaEdit, FaUsers, FaRobot, FaTrash, FaLock } from 'react-icons/fa';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -33,7 +34,7 @@ const OWN_WORK_STATUSES = ['draft', 'rejected'];
  * HR Managers and Employers see the whole organization in read-only form.
  */
 const VacancyList = () => {
-    const { user } = useAuth();
+    const { user, can } = useAuth();
     const [jobs, setJobs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -42,6 +43,9 @@ const VacancyList = () => {
     const [deleteTarget, setDeleteTarget] = useState(null);
 
     const isExpert = user?.role === 'hr_expert';
+    // Mirrors the backend's CAPABILITIES.VACANCY_APPROVE gate on PUT /jobs/:id/close -
+    // only whoever can approve a vacancy may also close it early.
+    const canClose = can('vacancy:approve');
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -83,6 +87,27 @@ const VacancyList = () => {
             setDeleteTarget(null);
         } catch (err) {
             toast.error(err.response?.data?.message || 'Could not delete vacancy');
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    // Closing is an early-stop of a still-open vacancy (e.g. hiring need
+    // withdrawn) rather than a Delete/Remove action, so it follows the same
+    // native-confirm pattern already used for other Update-type actions
+    // (e.g. delegation revoke) rather than the polished delete modal, which
+    // is scoped to destructive Delete/Remove actions only.
+    const closeVacancy = async (job) => {
+        if (!window.confirm(`Close "${job.title}"? It will stop accepting applications and be removed from the public job board. This cannot be undone from here.`)) {
+            return;
+        }
+        setBusyId(job._id);
+        try {
+            const res = await api.put(`/jobs/${job._id}/close`);
+            toast.success('Vacancy closed');
+            setJobs(prev => prev.map(item => (item._id === job._id ? { ...item, ...res.data.job } : item)));
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not close vacancy');
         } finally {
             setBusyId(null);
         }
@@ -146,6 +171,7 @@ const VacancyList = () => {
                                 <th className="fw-semibold">Vacancy</th>
                                 <th className="fw-semibold">Status</th>
                                 <th className="fw-semibold text-center">Applications</th>
+                                <th className="fw-semibold text-center">Positions</th>
                                 <th className="fw-semibold">Deadline</th>
                                 <th className="fw-semibold text-end">Actions</th>
                             </tr>
@@ -174,6 +200,17 @@ const VacancyList = () => {
                                         <td><StatusBadge status={job.status} /></td>
                                         <td className="text-center fw-semibold" style={{ fontSize: '0.85rem' }}>
                                             {job.applications?.length || 0}
+                                        </td>
+                                        <td className="text-center" style={{ fontSize: '0.82rem' }}>
+                                            {job.vacancy ? (
+                                                <>
+                                                    <span className="fw-semibold">{job.vacancy.hired}</span>
+                                                    <span className="text-muted"> / {job.vacancy.required} filled</span>
+                                                    {job.vacancy.isFull && isLive && (
+                                                        <div className="text-success" style={{ fontSize: '0.7rem' }}>All positions filled</div>
+                                                    )}
+                                                </>
+                                            ) : (job.numberOfPositions || 1)}
                                         </td>
                                         <td className="text-muted" style={{ fontSize: '0.8rem' }}>
                                             {job.applicationDeadline
@@ -205,6 +242,13 @@ const VacancyList = () => {
                                                               className="btn btn-sm btn-outline-primary d-flex align-items-center gap-1">
                                                             <FaRobot size={10} /> Match
                                                         </Link>
+                                                        {canClose && (
+                                                            <Button size="sm" variant="outline-secondary" disabled={busyId === job._id}
+                                                                    className="d-flex align-items-center gap-1"
+                                                                    onClick={() => closeVacancy(job)}>
+                                                                <FaLock size={10} /> Close
+                                                            </Button>
+                                                        )}
                                                     </>
                                                 )}
                                                 {canDelete && (
@@ -225,24 +269,16 @@ const VacancyList = () => {
             )}
         </Card>
 
-        <Modal show={!!deleteTarget} onHide={() => setDeleteTarget(null)} centered>
-            <Modal.Header closeButton>
-                <Modal.Title style={{ fontSize: '1.05rem' }}>Delete this vacancy?</Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-                <p className="text-muted mb-0" style={{ fontSize: '0.85rem' }}>
-                    <span className="fw-semibold text-dark">{deleteTarget?.title}</span> will be permanently
-                    removed. This cannot be undone. Only vacancies you have not submitted yet can be deleted -
-                    once a vacancy is with the HR Manager or published, close it instead.
-                </p>
-            </Modal.Body>
-            <Modal.Footer>
-                <Button variant="light" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-                <Button variant="danger" onClick={confirmDelete} disabled={busyId === deleteTarget?._id}>
-                    Delete vacancy
-                </Button>
-            </Modal.Footer>
-        </Modal>
+        <ConfirmDeleteModal
+            show={!!deleteTarget}
+            title="Delete this vacancy?"
+            itemName={deleteTarget?.title}
+            description="This cannot be undone. Only vacancies you have not submitted yet can be deleted - once a vacancy is with the HR Manager or published, close it instead."
+            confirmLabel="Delete vacancy"
+            busy={busyId === deleteTarget?._id}
+            onCancel={() => setDeleteTarget(null)}
+            onConfirm={confirmDelete}
+        />
         </>
     );
 };

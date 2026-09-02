@@ -7,6 +7,23 @@ const { matchCandidates } = require('../services/matchingService');
 const { applicantIdsFor, maskCandidate } = require('../services/candidatePrivacy');
 const notificationService = require('../services/notificationService');
 const { REQUISITION_LOCKED_FIELDS, buildFieldsFromRequisition } = require('../services/requisitionSync');
+const { vacancyStats } = require('../services/vacancyFulfillment');
+const { resolveActingForDelegators } = require('../services/delegationCapabilities');
+const { CAPABILITIES } = require('../config/permissions');
+
+/**
+ * May this user act on a vacancy owned by HR Expert `ownerId`? True for the
+ * owner, and for a colleague currently covering the owner through an
+ * in-effect delegation that includes `capability` (or is full-role) - so a
+ * draft/rejected vacancy never stalls while its owner is away. Deleting is
+ * deliberately NOT covered: it stays with the owner alone.
+ */
+const canActForVacancyOwner = async (req, ownerId, capability) => {
+    if (!ownerId) return false;
+    if (ownerId.toString() === req.user.id) return true;
+    const actingFor = await resolveActingForDelegators(req.user, capability);
+    return actingFor.includes(ownerId.toString());
+};
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
 
@@ -294,9 +311,12 @@ exports.getJob = async (req, res) => {
             await job.save();
         }
 
+        const stats = await vacancyStats(job);
+
         res.status(200).json({
             success: true,
-            job
+            job,
+            vacancy: stats
         });
     } catch (error) {
         console.error(error);
@@ -326,11 +346,11 @@ exports.updateJob = async (req, res) => {
             return res.status(error.code).json({ success: false, message: error.message });
         }
 
-        const isOwner = job.hr_expert && job.hr_expert.toString() === req.user.id;
+        const isOwner = await canActForVacancyOwner(req, job.hr_expert, CAPABILITIES.VACANCY_EDIT);
         if (!isOwner) {
             return res.status(403).json({
                 success: false,
-                message: 'Only the HR Expert who created this vacancy can edit it'
+                message: 'Only the HR Expert who created this vacancy (or their active delegate) can edit it'
             });
         }
 
@@ -406,11 +426,11 @@ exports.submitJob = async (req, res) => {
             return res.status(error.code).json({ success: false, message: error.message });
         }
 
-        const isOwner = job.hr_expert && job.hr_expert.toString() === req.user.id;
+        const isOwner = await canActForVacancyOwner(req, job.hr_expert, CAPABILITIES.VACANCY_SUBMIT);
         if (!isOwner) {
             return res.status(403).json({
                 success: false,
-                message: 'Only the HR Expert who created this vacancy can submit it'
+                message: 'Only the HR Expert who created this vacancy (or their active delegate) can submit it'
             });
         }
 
@@ -522,9 +542,17 @@ exports.getEmployerJobs = async (req, res) => {
             .populate('hr_expert', 'name email')
             .sort({ createdAt: -1 });
 
+        // Attach the same hired/remaining computation the detail view uses,
+        // computed from the applications already populated above (no extra
+        // query per job).
+        const jobsWithVacancy = await Promise.all(jobs.map(async job => {
+            const vacancy = await vacancyStats(job);
+            return { ...job.toObject(), vacancy };
+        }));
+
         res.status(200).json({
             success: true,
-            jobs
+            jobs: jobsWithVacancy
         });
     } catch (error) {
         console.error(error);

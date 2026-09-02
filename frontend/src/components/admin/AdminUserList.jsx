@@ -11,6 +11,7 @@ import {
 import { useParams } from 'react-router-dom';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 /* ── Role config map ── */
 const ROLE_CONFIG = {
@@ -45,6 +46,8 @@ const AdminUserList = () => {
     const [showModal, setShowModal] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [formData, setFormData] = useState({ name: '', email: '', role: config.apiRole || 'candidate', password: '' });
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting, setDeleting] = useState(false);
 
     const fetchUsers = useCallback(async () => {
         try {
@@ -99,14 +102,20 @@ const AdminUserList = () => {
         }
     };
 
-    const handleDelete = async (userId) => {
-        if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
+    const handleDelete = (user) => setDeleteTarget(user);
+
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
         try {
-            await api.delete(`/admin/users/${userId}`);
+            await api.delete(`/admin/users/${deleteTarget._id}`);
             toast.success('User deleted');
+            setDeleteTarget(null);
             fetchUsers();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Failed to delete user');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -352,7 +361,7 @@ const AdminUserList = () => {
                                                     onClick={() => handleToggleStatus(u)} style={{ padding: '6px 10px' }}>
                                                     {u.status === 'inactive' ? <FaToggleOff size={13} className="text-muted" /> : <FaToggleOn size={13} className="text-success" />}
                                                 </Button>
-                                                <Button variant="light" size="sm" className="border-0 rounded-2" title="Delete" onClick={() => handleDelete(u._id)}
+                                                <Button variant="light" size="sm" className="border-0 rounded-2" title="Delete" onClick={() => handleDelete(u)}
                                                     style={{ padding: '6px 10px' }}>
                                                     <FaTrash size={12} className="text-danger" />
                                                 </Button>
@@ -446,6 +455,15 @@ const AdminUserList = () => {
                     </Modal.Footer>
                 </Form>
             </Modal>
+
+            <ConfirmDeleteModal
+                show={!!deleteTarget}
+                title="Delete user?"
+                itemName={deleteTarget?.name}
+                busy={deleting}
+                onCancel={() => setDeleteTarget(null)}
+                onConfirm={confirmDelete}
+            />
         </div>
     );
 };

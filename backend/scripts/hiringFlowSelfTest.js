@@ -207,6 +207,22 @@ const cleanup = async () => {
 
     const onboarding = decision.data.onboarding;
     check('Employee record created for onboarding', !!onboarding?.employeeId && !onboarding?.error, onboarding);
+    check('Decision response flags that the vacancy was auto-closed', decision.data.vacancyClosed === true, decision.data.vacancyClosed);
+
+    // ---- Filling the vacancy's one required position closes it automatically --------
+    // This job defaulted to numberOfPositions: 1, so the single hire above
+    // should already have filled it.
+    const jobAfterHire = await call('GET', `/jobs/${job._id}`, { token: managerToken });
+    check('Vacancy status becomes "closed" once its one required position is filled',
+        jobAfterHire.data.job?.status === 'closed', jobAfterHire.data.job?.status);
+    check('Vacancy detail reports fulfillment stats (1 of 1 filled)',
+        jobAfterHire.data.vacancy?.hired === 1 && jobAfterHire.data.vacancy?.required === 1 && jobAfterHire.data.vacancy?.isFull === true,
+        jobAfterHire.data.vacancy);
+
+    const publicListingAfterFill = await call('GET', '/jobs');
+    const stillPubliclyListed = (publicListingAfterFill.data.jobs || []).some(j => j._id === job._id);
+    check('A fully-filled, auto-closed vacancy no longer appears on the public job board',
+        !stillPubliclyListed, publicListingAfterFill.data.totalJobs);
 
     // ---- The hire does not by itself grant the employee workspace -------------------
     // The role changes only when the person follows their activation link, so a
@@ -259,6 +275,157 @@ const cleanup = async () => {
 
     const finalCount = await db.collection('employees').countDocuments({ user: candidateId });
     check('Retry produced exactly one employee record', finalCount === 1, finalCount);
+
+    // ================================================================
+    // Vacancy fulfillment - multi-position headcount, over-hire guard,
+    // and manual close (spec: numberOfPositions vs. hires).
+    // ================================================================
+    let candidateSeq = 0;
+    const registerCandidate = async () => {
+        candidateSeq += 1;
+        const email = `flow-candidate-${stamp}-${candidateSeq}@example.com`;
+        const reg = await call('POST', '/auth/register', {
+            body: { name: `Flow Test Candidate ${candidateSeq}`, email, password: PASSWORD }
+        });
+        check(`Extra candidate ${candidateSeq} registers`, reg.status === 201, reg);
+        created.emails.push(email);
+        const id = new mongoose.Types.ObjectId(reg.data.user.id);
+        const resumeInsert2 = await db.collection('resumes').insertOne({
+            user: id, title: `Flow test CV ${candidateSeq}`, isDefault: true,
+            parsedData: { skills: ['javascript'], education: [], workExperience: [] },
+            createdAt: new Date(), updatedAt: new Date()
+        });
+        return { token: reg.data.token, id, resumeId: resumeInsert2.insertedId.toString() };
+    };
+
+    /** Apply, run through the HR Expert pipeline, and record the HR Manager's hire decision. */
+    const applyAndHire = async (jobId, candidate) => {
+        const appliedRes = await call('POST', '/applications', {
+            token: candidate.token, body: { jobId, resumeId: candidate.resumeId }
+        });
+        if (appliedRes.status !== 201) return { appliedRes, hireRes: null };
+        const appId = appliedRes.data.application._id;
+        for (const status of ['under_review', 'shortlisted', 'interviewed']) {
+            await call('PUT', `/applications/${appId}/status`, { token: expertToken, body: { status } });
+        }
+        const hireRes = await call('PUT', `/applications/${appId}/decision`, {
+            token: managerToken, body: { outcome: 'approved', status: 'hired' }
+        });
+        return { appliedRes, hireRes };
+    };
+
+    // ---- A 2-position vacancy stays open with one opening remaining ------------------
+    const job2Res = await call('POST', '/jobs', {
+        token: expertToken,
+        body: {
+            title: 'Hiring Flow Test Role (2 positions)',
+            description: 'Temporary 2-position vacancy created by the hiring flow self test.',
+            department: 'Engineering',
+            location: 'Hawassa',
+            numberOfPositions: 2,
+            applicationDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            salary: { amount: 20000, currency: 'ETB', period: 'monthly' }
+        }
+    });
+    const job2 = job2Res.data.job;
+    check('A 2-position vacancy is created', [200, 201].includes(job2Res.status) && !!job2, job2Res);
+    if (job2.status === 'draft') await call('PUT', `/jobs/${job2._id}/submit`, { token: expertToken });
+    await call('PUT', `/jobs/${job2._id}/approve`, { token: managerToken });
+
+    const candidate2 = await registerCandidate();
+    const { hireRes: hire1of2 } = await applyAndHire(job2._id, candidate2);
+    check('First of two positions is hired', hire1of2?.status === 200 && hire1of2.data.application?.status === 'hired', hire1of2?.data);
+    check('Vacancy is NOT auto-closed with one opening still remaining', hire1of2?.data.vacancyClosed === false, hire1of2?.data.vacancyClosed);
+
+    const job2AfterOneHire = await call('GET', `/jobs/${job2._id}`, { token: managerToken });
+    check('Vacancy stays published with 1 of 2 filled', job2AfterOneHire.data.job?.status === 'published', job2AfterOneHire.data.job?.status);
+    check('Vacancy reports 1 remaining opening',
+        job2AfterOneHire.data.vacancy?.hired === 1 && job2AfterOneHire.data.vacancy?.remaining === 1 && job2AfterOneHire.data.vacancy?.isFull === false,
+        job2AfterOneHire.data.vacancy);
+
+    const candidate3 = await registerCandidate();
+    const applyWhileOneRemains = await call('POST', '/applications', {
+        token: candidate3.token, body: { jobId: job2._id, resumeId: candidate3.resumeId }
+    });
+    check('A new candidate can still apply while one position remains', applyWhileOneRemains.status === 201, applyWhileOneRemains);
+
+    // candidate3 already applied above; run their application through the
+    // pipeline and hire them directly rather than re-applying.
+    const appId3 = applyWhileOneRemains.data.application._id;
+    for (const status of ['under_review', 'shortlisted', 'interviewed']) {
+        await call('PUT', `/applications/${appId3}/status`, { token: expertToken, body: { status } });
+    }
+    const hire2Res = await call('PUT', `/applications/${appId3}/decision`, {
+        token: managerToken, body: { outcome: 'approved', status: 'hired' }
+    });
+    check('Second of two positions is hired', hire2Res.status === 200 && hire2Res.data.application?.status === 'hired', hire2Res.data);
+    check('Vacancy IS auto-closed once both positions are filled', hire2Res.data.vacancyClosed === true, hire2Res.data.vacancyClosed);
+
+    const candidate4 = await registerCandidate();
+    const applyAfterFull = await call('POST', '/applications', {
+        token: candidate4.token, body: { jobId: job2._id, resumeId: candidate4.resumeId }
+    });
+    check('A new candidate cannot apply once both positions are filled and the vacancy has closed',
+        applyAfterFull.status === 400, applyAfterFull);
+
+    // ---- Defensive over-hire guard: the headcount check blocks applications  --------
+    // even for a vacancy whose status was somehow left public (belt-and-braces
+    // check in applyJob, independent of the auto-close in decideApplication).
+    await db.collection('jobs').updateOne({ _id: new mongoose.Types.ObjectId(job2._id) }, { $set: { status: 'published' } });
+    const candidate5 = await registerCandidate();
+    const applyDespiteReopenedStatus = await call('POST', '/applications', {
+        token: candidate5.token, body: { jobId: job2._id, resumeId: candidate5.resumeId }
+    });
+    check('The headcount guard blocks a new application even if the vacancy status is reopened',
+        applyDespiteReopenedStatus.status === 400 && /filled/i.test(applyDespiteReopenedStatus.data.message || ''),
+        applyDespiteReopenedStatus);
+
+    // ---- Manual close still works, and does not disturb an application already in the pipeline ----
+    const job3Res = await call('POST', '/jobs', {
+        token: expertToken,
+        body: {
+            title: 'Hiring Flow Test Role (manual close)',
+            description: 'Temporary vacancy for the manual-close self test.',
+            department: 'Engineering',
+            location: 'Hawassa',
+            numberOfPositions: 2,
+            applicationDeadline: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            salary: { amount: 20000, currency: 'ETB', period: 'monthly' }
+        }
+    });
+    const job3 = job3Res.data.job;
+    if (job3.status === 'draft') await call('PUT', `/jobs/${job3._id}/submit`, { token: expertToken });
+    await call('PUT', `/jobs/${job3._id}/approve`, { token: managerToken });
+
+    const candidate6 = await registerCandidate();
+    const applyJob3 = await call('POST', '/applications', {
+        token: candidate6.token, body: { jobId: job3._id, resumeId: candidate6.resumeId }
+    });
+    check('Candidate applies to the manual-close test vacancy', applyJob3.status === 201, applyJob3);
+    const appId6 = applyJob3.data.application._id;
+
+    const expertCloseAttempt = await call('PUT', `/jobs/${job3._id}/close`, { token: expertToken });
+    check('HR Expert cannot manually close a vacancy (HR Manager / Employer only)', expertCloseAttempt.status === 403, expertCloseAttempt);
+
+    const managerClose = await call('PUT', `/jobs/${job3._id}/close`, { token: managerToken });
+    check('HR Manager can manually close a vacancy with an opening still remaining', managerClose.status === 200, managerClose);
+    check('Manually closed vacancy status is "closed"', managerClose.data.job?.status === 'closed', managerClose.data.job?.status);
+
+    const candidate7 = await registerCandidate();
+    const applyAfterManualClose = await call('POST', '/applications', {
+        token: candidate7.token, body: { jobId: job3._id, resumeId: candidate7.resumeId }
+    });
+    check('A new candidate cannot apply to a manually closed vacancy', applyAfterManualClose.status === 400, applyAfterManualClose);
+
+    // Closing must not affect an application already in the pipeline before the close.
+    for (const status of ['under_review', 'shortlisted', 'interviewed']) {
+        await call('PUT', `/applications/${appId6}/status`, { token: expertToken, body: { status } });
+    }
+    const hireAfterClose = await call('PUT', `/applications/${appId6}/decision`, {
+        token: managerToken, body: { outcome: 'approved', status: 'hired' }
+    });
+    check('An application already in the pipeline can still be hired after the vacancy was manually closed',
+        hireAfterClose.status === 200 && hireAfterClose.data.application?.status === 'hired', hireAfterClose.data);
 
     await cleanup();
     console.log('\nCleanup: removed the test organization, HR team, vacancy, application and accounts.');

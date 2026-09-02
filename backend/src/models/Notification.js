@@ -18,13 +18,14 @@ const NotificationSchema = new mongoose.Schema({
         enum: [
             // Recruitment
             'application_update', 'interview_scheduled', 'job_approved', 'job_rejected',
-            'vacancy_pending_approval', 'new_application', 'hiring_decision',
+            'vacancy_pending_approval', 'new_application', 'hiring_decision', 'vacancy_filled',
             // Job Requisition
             'requisition_submitted', 'requisition_returned', 'requisition_pending_approval',
             'requisition_approved', 'requisition_rejected', 'requisition_job_created',
             // HR operations
-            'leave_request', 'leave_decision', 'request_submitted', 'request_decision',
-            'training_assigned', 'training_decision', 'delegation_assigned',
+            'leave_request', 'leave_returned', 'leave_decision', 'request_submitted', 'request_returned', 'request_decision',
+            'training_assigned', 'training_decision',
+            'delegation_assigned', 'delegation_request', 'delegation_update',
             'complaint_update', 'document_expiring',
             // Platform
             'employer_registered', 'account_update', 'general'

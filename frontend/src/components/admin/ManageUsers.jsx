@@ -5,6 +5,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import BackButton from '../common/BackButton';
+import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 
 const ManageUsers = () => {
     const { t } = useLanguage();
@@ -19,6 +20,8 @@ const ManageUsers = () => {
         role: 'candidate',
         password: ''
     });
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         fetchUsers();
@@ -76,15 +79,21 @@ const ManageUsers = () => {
         }
     };
 
-    const handleDelete = async (userId) => {
-        if (!window.confirm('Are you sure you want to delete this user?')) return;
+    const handleDelete = (user) => setDeleteTarget(user);
+
+    const confirmDelete = async () => {
+        if (!deleteTarget) return;
+        setDeleting(true);
         try {
-            await api.delete(`/admin/users/${userId}`);
+            await api.delete(`/admin/users/${deleteTarget._id}`);
             toast.success('User deleted successfully');
+            setDeleteTarget(null);
             fetchUsers();
         } catch (error) {
             console.error('Delete user error:', error);
             toast.error(error.response?.data?.message || 'Failed to delete user');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -164,7 +173,7 @@ const ManageUsers = () => {
                                                 <Button
                                                     variant="outline-danger"
                                                     size="sm"
-                                                    onClick={() => handleDelete(user._id)}
+                                                    onClick={() => handleDelete(user)}
                                                     title="Delete User"
                                                 >
                                                     <FaTrash />
@@ -238,6 +247,15 @@ const ManageUsers = () => {
                         </Form>
                     </Modal.Body>
                 </Modal>
+
+                <ConfirmDeleteModal
+                    show={!!deleteTarget}
+                    title="Delete user?"
+                    itemName={deleteTarget?.name}
+                    busy={deleting}
+                    onCancel={() => setDeleteTarget(null)}
+                    onConfirm={confirmDelete}
+                />
             </Container>
         </section>
     );

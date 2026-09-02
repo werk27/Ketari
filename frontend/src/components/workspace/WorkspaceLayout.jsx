@@ -40,6 +40,12 @@ const T = {
 const DelegationBanner = ({ delegations }) => {
     if (!delegations || delegations.length === 0) return null;
 
+    // Delegation windows are exact timestamps, so the banner shows the time
+    // of day too, in the user's local timezone.
+    const fmtUntil = (value) => new Date(value).toLocaleString(undefined, {
+        day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+
     return (
         <div className="d-flex flex-column gap-2 mb-3">
             {delegations.map(d => {
@@ -51,10 +57,46 @@ const DelegationBanner = ({ delegations }) => {
                         <div>
                             You are covering <strong>{d.delegatorName}</strong>'s responsibility
                             {d.title ? <> — "{d.title}"</> : null} until{' '}
-                            {new Date(d.endDate).toLocaleDateString()}.{' '}
+                            {fmtUntil(d.endDate)}.{' '}
                             {isScoped
                                 ? `You temporarily have ${d.scopedCapabilities.length} specific permission(s) from them.`
                                 : 'Their full approval/action capabilities are temporarily available to you.'}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
+
+/**
+ * Tells a delegator which of their responsibilities are currently handed to
+ * a colleague - and therefore temporarily unavailable to them. Delegation is
+ * a substitution, not shared access, so actions they normally see may be
+ * missing until the delegation ends; this banner explains why. Purely
+ * informational - the backend enforces the suspension regardless.
+ */
+const OutgoingDelegationBanner = ({ delegations }) => {
+    if (!delegations || delegations.length === 0) return null;
+
+    return (
+        <div className="d-flex flex-column gap-2 mb-3">
+            {delegations.map(d => {
+                const isScoped = Array.isArray(d.scopedCapabilities) && d.scopedCapabilities.length > 0;
+                return (
+                    <div key={d.id} className="d-flex align-items-start gap-2 p-2 px-3 rounded"
+                         style={{ background: '#FFF7ED', border: '1px solid #FED7AA', color: '#9A3412', fontSize: '0.84rem' }}>
+                        <FaExchangeAlt size={13} style={{ marginTop: 3, flexShrink: 0 }} />
+                        <div>
+                            You have handed <strong>{d.title ? `"${d.title}"` : 'a responsibility'}</strong> to{' '}
+                            <strong>{d.delegateName}</strong> until{' '}
+                            {new Date(d.endDate).toLocaleString(undefined, {
+                                day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                            })}.{' '}
+                            {isScoped
+                                ? `The ${d.scopedCapabilities.length} delegated permission(s) are unavailable to you until then.`
+                                : 'Your delegable permissions are unavailable to you until then.'}{' '}
+                            Revoke the delegation to take them back early.
                         </div>
                     </div>
                 );
@@ -226,6 +268,7 @@ const WorkspaceLayout = () => {
                 <main className="workspace-main flex-grow-1 p-3 p-md-4" style={{ overflowY: 'auto' }}>
                     <div className="workspace-content">
                         <DelegationBanner delegations={user.activeDelegations} />
+                        <OutgoingDelegationBanner delegations={user.outgoingDelegations} />
                         <Outlet />
                     </div>
                 </main>

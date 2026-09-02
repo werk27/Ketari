@@ -67,8 +67,13 @@ const applyStatusTransition = (complaint, { status, resolution, assignedTo }, re
     }
 
     complaint.status = status;
-    if (status === 'resolved') {
+    // The response text is the FEEDBACK the complainant sees on their own
+    // "My Complaints" page, so store it for a mid-workflow response too -
+    // not only at final resolution.
+    if (resolution && ['responded', 'resolved', 'rejected'].includes(status)) {
         complaint.resolution = resolution;
+    }
+    if (status === 'resolved') {
         complaint.resolvedDate = new Date();
     }
     if (assignedTo) complaint.assignedTo = assignedTo;

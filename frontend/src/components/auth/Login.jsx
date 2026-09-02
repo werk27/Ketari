@@ -13,6 +13,7 @@ const Login = () => {
         password: ''
     });
     const [error, setError] = useState('');
+    const [onLeaveBlock, setOnLeaveBlock] = useState(false);
     const [loading, setLoading] = useState(false);
     const { login } = useAuth();
     const { t } = useLanguage();
@@ -21,6 +22,7 @@ const Login = () => {
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
         setError('');
+        setOnLeaveBlock(false);
     };
 
     const handleSubmit = async (e) => {
@@ -37,6 +39,9 @@ const Login = () => {
             // user stranded on the public home page.
             navigate(roleHomePath(result.user?.role));
         } else {
+            // A temporary leave-period block is information, not a failure:
+            // the account and password are fine and access returns by itself.
+            setOnLeaveBlock(result.code === 'ON_LEAVE_ACCESS_BLOCKED');
             setError(result.message || t('auth.login_error'));
         }
     };
@@ -57,7 +62,8 @@ const Login = () => {
                                 </div>
 
                                 {error && (
-                                    <Alert variant="danger" className="rounded-3">
+                                    <Alert variant={onLeaveBlock ? 'warning' : 'danger'} className="rounded-3">
+                                        {onLeaveBlock && <div className="fw-semibold mb-1">🏖️ On Leave</div>}
                                         {error}
                                     </Alert>
                                 )}

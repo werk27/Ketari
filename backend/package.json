@@ -22,7 +22,14 @@
     "test:salary": "node scripts/salarySelfTest.js",
     "test:requisitions": "node scripts/requisitionSelfTest.js",
     "test:department-head": "node scripts/departmentHeadSelfTest.js",
-    "test:configuration": "node scripts/configurationSelfTest.js"
+    "test:configuration": "node scripts/configurationSelfTest.js",
+    "test:leave": "node scripts/leaveWorkflowSelfTest.js",
+    "test:delegation": "node scripts/delegationWorkflowSelfTest.js",
+    "test:leave-access-block": "node scripts/leaveAccessBlockSelfTest.js",
+    "test:acting-delegation": "node scripts/actingDelegationProofSelfTest.js",
+    "test:fullrole-no-leave": "node scripts/fullRoleNoLeaveSelfTest.js",
+    "test:expert-sendback": "node scripts/expertSendBackPolicySelfTest.js",
+    "test:timestamp-delegation": "node scripts/timestampDelegationSelfTest.js"
   },
   "dependencies": {
     "axios": "^1.19.0",

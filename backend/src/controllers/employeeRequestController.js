@@ -7,7 +7,12 @@ const notificationService = require('../services/notificationService');
  *
  * Workflow (spec §12 / §32):
  *   submitted -> processing (HR Expert) -> approved | rejected (HR Manager) -> completed
+ *   with a detour: submitted -> returned_for_correction (HR Expert "Send
+ *   Back") -> resubmitted by the requester -> submitted again.
  *
+ * The HR Expert's ONLY corrective action is the send-back; a terminal reject
+ * is reserved for the HR Manager - the same separation-of-duties rule as the
+ * Leave and Job Requisition workflows.
  * The person who processes a request may never be the person who approves it.
  */
 
@@ -192,6 +197,108 @@ exports.processRequest = async (req, res) => {
     }
 };
 
+// @desc    Send a submitted request back to the requester for correction /
+//          clarification ("Send Back"). This is the HR Expert's only
+//          non-forward action - there is no HR Expert final reject; only
+//          the HR Manager may permanently reject a request (decideRequest).
+// @route   PUT /api/requests/:id/return
+// @access  Private (HR Expert - request:process)
+exports.returnRequest = async (req, res) => {
+    try {
+        const { note } = req.body;
+        if (!note || !note.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'A note is required so the requester knows what to correct'
+            });
+        }
+
+        const { request, error } = await findScopedRequest(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (request.status !== 'submitted') {
+            return res.status(400).json({
+                success: false,
+                message: `Only a submitted request can be returned (current status: ${request.status})`
+            });
+        }
+
+        request.status = 'returned_for_correction';
+        request.returnReason = note.trim();
+        request.processedBy = req.user.id;
+        request.processedAt = new Date();
+        recordHistory(request, 'returned_for_correction', req.user.id, note.trim());
+        await request.save();
+
+        if (request.raisedBy) {
+            await notificationService.notify({
+                user: request.raisedBy,
+                employer: request.employer,
+                type: 'request_returned',
+                title: 'Request needs correction',
+                message: `Your request "${request.title}" was sent back: ${note.trim()}`,
+                link: '/employee/dashboard'
+            });
+        }
+
+        res.status(200).json({ success: true, message: 'Request returned to the requester', data: request });
+    } catch (error) {
+        console.error('Return Request Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Edit and resubmit a request that was returned for correction
+// @route   PUT /api/requests/:id/resubmit
+// @access  Private (the requester)
+exports.resubmitRequest = async (req, res) => {
+    try {
+        const { request, error } = await findScopedRequest(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        // Identity-bound on purpose: only the person who raised the request
+        // may correct and resubmit it - it is their own personal request.
+        if (!request.raisedBy || request.raisedBy.toString() !== req.user.id) {
+            return res.status(403).json({ success: false, message: 'Only the requester can resubmit this request' });
+        }
+
+        if (request.status !== 'returned_for_correction') {
+            return res.status(400).json({
+                success: false,
+                message: `Only a request returned for correction can be resubmitted (current status: ${request.status})`
+            });
+        }
+
+        const editable = ['title', 'description', 'reason', 'startDate', 'endDate', 'details'];
+        editable.forEach(field => {
+            if (req.body[field] !== undefined) request[field] = req.body[field];
+        });
+
+        request.status = 'submitted';
+        request.returnReason = '';
+        recordHistory(request, 'submitted', req.user.id, req.body.note || 'Corrected and resubmitted');
+        await request.save();
+
+        await notificationService.notifyRoles({
+            employer: request.employer,
+            roles: ['hr_expert'],
+            type: 'request_submitted',
+            title: 'Corrected request resubmitted',
+            message: `${req.user.name} corrected and resubmitted the request "${request.title}".`,
+            link: '/hr-expert/requests'
+        });
+
+        res.status(200).json({ success: true, message: 'Request resubmitted for HR review', data: request });
+    } catch (error) {
+        console.error('Resubmit Request Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
 // @desc    Approve or reject an employee request
 // @route   PUT /api/requests/:id/decision
 // @access  Private (HR Manager)
@@ -309,7 +416,7 @@ exports.cancelRequest = async (req, res) => {
             return res.status(403).json({ success: false, message: 'You can only cancel your own request' });
         }
 
-        if (!['submitted', 'processing'].includes(request.status)) {
+        if (!['submitted', 'returned_for_correction', 'processing'].includes(request.status)) {
             return res.status(400).json({
                 success: false,
                 message: `This request can no longer be cancelled (status: ${request.status})`
