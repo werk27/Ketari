@@ -48,13 +48,20 @@ const LeaveSchema = new mongoose.Schema({
     },
     // Workflow (spec §17/§19): employee submits (pending) -> HR Expert is the
     // validation gate, which either sends it back for correction/clarification
-    // or forwards it (under_review) -> HR Manager makes the final
+    // or forwards it (pending_approval) -> HR Manager makes the final
     // approve/reject decision. HR Expert has no final-reject authority; only
     // the HR Manager may permanently reject a request, and HR Manager may
-    // never decide on a request that has not passed through under_review.
+    // never decide on a request that has not passed through that stage.
+    //
+    // 'under_review' is kept for records forwarded before this status was
+    // renamed to 'pending_approval' - the same name Job Requisition and
+    // Training already use for the identical "HR Expert forwarded, awaiting
+    // HR Manager" stage. Every check that gates on this stage accepts both
+    // (see leaveController's AWAITING_MANAGER_STATUSES) so existing records
+    // are never invalidated; only newly forwarded requests use the new name.
     status: {
         type: String,
-        enum: ['pending', 'returned_for_correction', 'under_review', 'approved', 'rejected', 'cancelled'],
+        enum: ['pending', 'returned_for_correction', 'under_review', 'pending_approval', 'approved', 'rejected', 'cancelled'],
         default: 'pending',
         index: true
     },

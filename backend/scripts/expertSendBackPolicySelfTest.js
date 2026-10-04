@@ -205,15 +205,15 @@ const cleanup = async () => {
     check('The return reason is cleared on resubmission', resubmitReq.data.data.returnReason === '', resubmitReq.data.data.returnReason);
 
     const forward = await call('PUT', `/requests/${reqId}/process`, { token: expert.token, body: {} });
-    check('Expert forwards the corrected request', forward.status === 200 && forward.data.data.status === 'processing', forward.data);
+    check('Expert forwards the corrected request', forward.status === 200 && forward.data.data.status === 'pending_approval', forward.data);
 
     const approve = await call('PUT', `/requests/${reqId}/decision`, { token: manager.token, body: { outcome: 'approved' } });
     check('HR Manager approves it', approve.status === 200 && approve.data.data.status === 'approved', approve.data);
 
     const reqDoc = await db.collection('employeerequests').findOne({ _id: new mongoose.Types.ObjectId(String(reqId)) });
     const historyStatuses = (reqDoc.history || []).map(h => h.status);
-    check('AUDIT: full history preserved (submitted -> returned -> submitted -> processing -> approved)',
-        ['submitted', 'returned_for_correction', 'submitted', 'processing', 'approved']
+    check('AUDIT: full history preserved (submitted -> returned -> submitted -> pending_approval -> approved)',
+        ['submitted', 'returned_for_correction', 'submitted', 'pending_approval', 'approved']
             .every((s, i) => historyStatuses[i] === s),
         historyStatuses);
     const returnedEntry = (reqDoc.history || []).find(h => h.status === 'returned_for_correction');

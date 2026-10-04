@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { FaExchangeAlt, FaPlus } from 'react-icons/fa';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { resolveDisplayRole } from '../workspace/navigationConfig';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
@@ -517,7 +518,7 @@ const DelegationManagement = () => {
                                         client-side status filter is needed here. */}
                                     {team.map(member => (
                                         <option key={member._id} value={member._id}>
-                                            {member.name} — {member.role}
+                                            {member.name} — {resolveDisplayRole(member.role, member.isDepartmentHead)}
                                         </option>
                                     ))}
                                 </Form.Select>
@@ -629,7 +630,7 @@ const DelegationManagement = () => {
                             </Col>
                             <Col md={6}>
                                 <div className="text-muted" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>From → To</div>
-                                <div>{details.delegator?.name || '—'} ({details.delegator?.role || '—'}) → {details.delegate?.name || '—'} ({details.delegate?.role || '—'})</div>
+                                <div>{details.delegator?.name || '—'} ({details.delegator ? resolveDisplayRole(details.delegator.role, details.delegator.isDepartmentHead) : '—'}) → {details.delegate?.name || '—'} ({details.delegate ? resolveDisplayRole(details.delegate.role, details.delegate.isDepartmentHead) : '—'})</div>
                             </Col>
                             <Col md={6}>
                                 <div className="text-muted" style={{ fontSize: '0.72rem', textTransform: 'uppercase' }}>Period</div>

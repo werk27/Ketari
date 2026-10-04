@@ -4,15 +4,11 @@ import { Button } from 'react-bootstrap';
 import { toast } from 'react-toastify';
 import { FaUserFriends, FaUsers } from 'react-icons/fa';
 import api from '../../services/api';
+import { ROLE_LABELS } from '../workspace/navigationConfig';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
 } from '../workspace/ui';
 
-// Exact label per role rather than a hr_manager/else ternary - the backend now
-// scopes this list to hr_expert/hr_manager only, but a mislabeled fallback
-// here previously showed plain employees as "HR Expert" whenever that
-// scoping slipped, so this stays explicit rather than defaulting.
-const ROLE_LABELS = { hr_expert: 'HR Expert', hr_manager: 'HR Manager', employee: 'Employee', employer: 'Employer' };
 
 /**
  * HR team overview for the Employer - read only.

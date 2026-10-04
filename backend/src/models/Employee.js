@@ -184,9 +184,44 @@ const EmployeeSchema = new mongoose.Schema({
         recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
     }],
 
+    /**
+     * Registration approval workflow (spec: HR Expert records/submits, HR
+     * Manager gives final approval - separate people, separate actions).
+     *
+     * This is deliberately independent from `onboarding` above: onboarding is
+     * the EMPLOYEE completing their own profile after they already exist as an
+     * active hire; registration is HR getting a NEW record itself past review
+     * before it counts as an official employee. An employee created by the
+     * Employer (bootstrapping an organization with no HR staff yet) or by the
+     * recruitment hire pipeline (onboardingService - already implicitly
+     * approved by the HR Manager who decided the hire) is auto-approved and
+     * never enters 'pending_approval' - see employeeController.createEmployee.
+     *
+     * `employee.status` itself (not a separate field here) carries the
+     * workflow position so the existing Employee Directory status column and
+     * filter (built for active/inactive/.../terminated) shows and filters
+     * "Pending Approval" / "Rejected" for free, with no separate UI concept
+     * to maintain. This sub-document only holds the metadata and history a
+     * status value alone cannot: who submitted/reviewed it, when, and why a
+     * rejection happened.
+     */
+    registration: {
+        submittedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        submittedAt: { type: Date, default: null },
+        reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        reviewedAt: { type: Date, default: null },
+        rejectionReason: { type: String, default: '' },
+        history: [{
+            status: String,
+            changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            changedAt: { type: Date, default: Date.now },
+            note: { type: String, default: '' }
+        }]
+    },
+
     status: {
         type: String,
-        enum: ['active', 'inactive', 'terminated', 'on_leave', 'suspended', 'resigned'],
+        enum: ['pending_approval', 'active', 'rejected', 'inactive', 'terminated', 'on_leave', 'suspended', 'resigned'],
         default: 'active'
     },
     createdAt: {

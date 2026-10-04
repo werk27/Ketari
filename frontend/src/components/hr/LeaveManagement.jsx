@@ -12,10 +12,16 @@ const FILTERS = [
     { key: 'all', label: 'All' },
     { key: 'pending', label: 'New' },
     { key: 'returned_for_correction', label: 'Returned' },
-    { key: 'under_review', label: 'Awaiting approval' },
+    { key: 'pending_approval', label: 'Awaiting approval' },
     { key: 'approved', label: 'Approved' },
     { key: 'rejected', label: 'Rejected' }
 ];
+
+// 'under_review' is the pre-rename value for the same "forwarded, awaiting
+// HR Manager" stage now called 'pending_approval' (see leaveController.js);
+// both are recognised so a record forwarded before the rename still displays
+// and behaves identically to one forwarded after it.
+const AWAITING_MANAGER_STATUSES = ['under_review', 'pending_approval'];
 
 /**
  * Leave management.
@@ -25,7 +31,7 @@ const FILTERS = [
  * Clarification") when something needs correcting - e.g. a document is
  * unclear, dates conflict, or a policy question needs the employee's
  * input. HR Expert has no final rejection authority. Only a request an
- * HR Expert has forwarded (under_review) reaches the HR Manager, who
+ * HR Expert has forwarded (pending_approval) reaches the HR Manager, who
  * makes the final approve/reject decision (rejection requires a reason).
  * The two stages are deliberately separate so nobody approves their own
  * work, and HR Manager can never decide on a request that has not passed
@@ -166,7 +172,7 @@ const LeaveManagement = () => {
                             <tbody>
                                 {leaves.map(leave => {
                                     const isNew = leave.status === 'pending';
-                                    const awaiting = leave.status === 'under_review';
+                                    const awaiting = AWAITING_MANAGER_STATUSES.includes(leave.status);
                                     return (
                                         <tr key={leave._id}>
                                             <td>

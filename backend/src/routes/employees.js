@@ -13,7 +13,10 @@ const {
     linkEmployeeAccount,
     setEmployeeAccountStatus,
     assignEmployeeRole,
-    resendEmployeeCredentials
+    resendEmployeeCredentials,
+    approveRegistration,
+    rejectRegistration,
+    resubmitRegistration
 } = require('../controllers/employeeController');
 const { protect, can, withEmployerScope, requireActiveEmployer } = require('../middleware/auth');
 const { CAPABILITIES } = require('../config/permissions');
@@ -59,6 +62,28 @@ router.put('/:id/onboarding/approve', protect, can(CAPABILITIES.EMPLOYEE_DELETE)
 // @desc    Return a record to the employee for correction
 // @access  Private (employee:view - HR Expert or HR Manager)
 router.put('/:id/onboarding/return', protect, can(CAPABILITIES.EMPLOYEE_VIEW), withEmployerScope, returnOnboarding);
+
+// ---------------------------------------------------------------------------
+// Registration approval workflow. Declared before '/:id' so these paths are
+// not captured by it. An HR-Expert-recorded employee starts pending_approval
+// (see employeeController.createEmployee) and does not become an officially
+// active employee until an HR Manager approves it.
+// ---------------------------------------------------------------------------
+
+// @route   PUT /api/employees/:id/registration/approve
+// @desc    HR Manager approves a pending employee registration
+// @access  Private (employee:delete - the HR Manager oversight capability)
+router.put('/:id/registration/approve', protect, can(CAPABILITIES.EMPLOYEE_DELETE), withEmployerScope, approveRegistration);
+
+// @route   PUT /api/employees/:id/registration/reject
+// @desc    HR Manager rejects a pending employee registration with a mandatory reason
+// @access  Private (employee:delete - the HR Manager oversight capability)
+router.put('/:id/registration/reject', protect, can(CAPABILITIES.EMPLOYEE_DELETE), withEmployerScope, rejectRegistration);
+
+// @route   PUT /api/employees/:id/registration/resubmit
+// @desc    HR Expert corrects and resubmits a rejected registration
+// @access  Private (employee:record - HR Expert)
+router.put('/:id/registration/resubmit', protect, can(CAPABILITIES.EMPLOYEE_RECORD), withEmployerScope, resubmitRegistration);
 
 // @route   GET /api/employees/me
 // @desc    The signed-in user's own employee record

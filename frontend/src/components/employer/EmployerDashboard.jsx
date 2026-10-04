@@ -5,6 +5,7 @@ import {
     FaUsers, FaCalendarAlt, FaClipboardList, FaGraduationCap, FaComments, FaPlus
 } from 'react-icons/fa';
 import api, { getImageUrl } from '../../services/api';
+import { ROLE_LABELS } from '../workspace/navigationConfig';
 import '../../styles/dashboardHero.css';
 import {
     Card, StatCard, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
@@ -289,8 +290,7 @@ const EmployerDashboard = () => {
                                         </div>
                                         <div className="text-end flex-shrink-0">
                                             <div className="fw-semibold text-dark" style={{ fontSize: '0.74rem' }}>
-                                                {member.role === 'hr_manager' ? 'HR Manager'
-                                                    : member.role === 'hr_expert' ? 'HR Expert' : 'Employee'}
+                                                {ROLE_LABELS[member.role] || member.role}
                                             </div>
                                             <StatusBadge status={member.status} />
                                         </div>

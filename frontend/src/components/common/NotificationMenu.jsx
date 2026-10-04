@@ -92,6 +92,7 @@ const NotificationMenu = () => {
             case 'vacancy_filled': return <FaBriefcase className="text-success" />;
             case 'request_submitted': case 'request_decision': return <FaUserCog className="text-info" />;
             case 'training_assigned': case 'training_decision': return <FaGraduationCap className="text-primary" />;
+            case 'training_returned': return <FaGraduationCap className="text-danger" />;
             case 'employer_registered': return <FaBuilding className="text-warning" />;
             default: return <FaInfoCircle className="text-secondary" />;
         }

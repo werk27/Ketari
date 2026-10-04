@@ -66,6 +66,10 @@ const loadScopedApplication = async (applicationId, req, populate = '') => {
 
     return { application };
 };
+// Exposed so other controllers that operate on an application belonging to a
+// vacancy (e.g. interviewController) reuse this exact tenant-scoping check
+// instead of re-implementing their own, weaker version of it.
+exports.loadScopedApplication = loadScopedApplication;
 
 // @desc    Apply for a job
 // @route   POST /api/applications
@@ -122,10 +126,22 @@ exports.applyJob = async (req, res) => {
             });
         }
 
-        // Check if already applied
+        // Check if already applied.
+        //
+        // Only a still-ACTIVE application blocks a new one. Withdrawing was
+        // the candidate's own voluntary action (a change of mind, availability,
+        // etc.), not an HR decision, and nothing in this workflow documents an
+        // intentional "withdrawal is permanent" policy - this used to match
+        // on ANY existing application regardless of status, which is what
+        // made every withdrawal permanent as an unreviewed side effect
+        // rather than a deliberate rule. A 'rejected' application still
+        // blocks: that IS a real HR decision on this vacancy, and is left
+        // exactly as strict as before. The withdrawn application itself is
+        // never touched or deleted, so its full history stays intact.
         const existingApplication = await Application.findOne({
             job: jobId,
-            applicant: req.user.id
+            applicant: req.user.id,
+            status: { $ne: 'withdrawn' }
         });
 
         if (existingApplication) {
@@ -754,6 +770,14 @@ exports.decideApplication = async (req, res) => {
         // automatically - the same effect the HR Manager gets from the
         // manual "Close" action - so it stops accepting applications and
         // drops off the public job board without anyone having to remember.
+        //
+        // The requisition's originator (e.g. a Department Head) is not
+        // notified again here: createEmployeeFromApplication() above already
+        // notified requisition.requestedBy ("Your requisition has been
+        // filled") for this exact hire, which is the same hire that triggers
+        // this auto-close. Notifying them a second time for the vacancy
+        // closing would be a duplicate about the same event, so this stays
+        // scoped to the hr_expert/employer roles who manage the job posting.
         let vacancyClosed = null;
         if (outcome === 'approved' && finalStatus === 'hired') {
             try {

@@ -236,7 +236,7 @@ const makeStaffMember = async ({ employerToken, firstName, lastName, email, role
 
     const forwardRes = await call('PUT', `/leaves/${req1Id}/process`, { token: expertA.token, body: {} });
     check('Test 1: HR Expert forwards the validated request', forwardRes.status === 200, forwardRes);
-    check('Test 1: status becomes "under_review"', forwardRes.data.data?.status === 'under_review', forwardRes.data);
+    check('Test 1: status becomes "pending_approval"', forwardRes.data.data?.status === 'pending_approval', forwardRes.data);
 
     const approveRes = await call('PUT', `/leaves/${req1Id}/status`, {
         token: managerA.token, body: { status: 'approved' }
@@ -251,16 +251,24 @@ const makeStaffMember = async ({ employerToken, firstName, lastName, email, role
 
     // ================================================================
     // Balance retrieval bug fix: a User with an organization role but no
-    // Employee HR record yet (e.g. added via /employers/me/team, before any
-    // employee data entry) must still see a REAL computed balance, not an
+    // Employee HR record yet must still see a REAL computed balance, not an
     // empty array indistinguishable from "no leave types configured".
+    //
+    // Every current account-creation path (POST /employers/me/team,
+    // POST /employees/:id/account) now always creates/links an Employee
+    // record - deliberately, so a role is never granted to an orphan account
+    // (see employerController.addTeamMember). This scenario can therefore
+    // only still occur for pre-existing/legacy data, so it is reproduced
+    // directly at the database layer here rather than through the API, which
+    // can no longer produce it.
     // ================================================================
     const bareEmail = `leave-bare-${stamp}@example.com`;
     extraEmails.push(bareEmail);
-    const bareRes = await call('POST', '/employers/me/team', {
-        token: employerAToken, body: { name: 'Bare Account', email: bareEmail, password: PASSWORD, role: 'employee' }
+    const bcrypt = require('bcryptjs');
+    const bareUser = await db.collection('users').insertOne({
+        name: 'Bare Account', email: bareEmail, password: await bcrypt.hash(PASSWORD, 10),
+        role: 'employee', status: 'active', employer: employerAId, createdAt: new Date()
     });
-    check('A bare account (no Employee record) can be added to the organization', bareRes.status === 201, bareRes);
     const bareToken = await login({ email: bareEmail, password: PASSWORD });
 
     const bareBalance = await call('GET', '/leaves/balance', { token: bareToken });

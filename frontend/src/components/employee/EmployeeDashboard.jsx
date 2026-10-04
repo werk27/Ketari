@@ -63,6 +63,7 @@ const EmployeeDashboard = () => {
     const identity = describeEmployment(user);
     const [tab, setTab] = useState('leave');
     const [data, setData] = useState({ leaves: [], requests: [], trainings: [], attendance: null, balances: [], leaveTypesConfigured: null });
+    const [availableTrainings, setAvailableTrainings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [balanceError, setBalanceError] = useState(null);
@@ -74,16 +75,22 @@ const EmployeeDashboard = () => {
     const [hasExistingAttachment, setHasExistingAttachment] = useState(false);
     const [resubmitTarget, setResubmitTarget] = useState(null);
     const [showRequest, setShowRequest] = useState(false);
-    const [requestForm, setRequestForm] = useState({ type: 'break_year', title: '', reason: '' });
+    const [requestForm, setRequestForm] = useState({ type: 'break_year', title: '', reason: '', targetDepartment: '' });
     // The returned HR request being corrected, if any (mirrors the leave flow).
     const [requestResubmitTarget, setRequestResubmitTarget] = useState(null);
+    // Only needed for a Transfer request's "target department" field, so
+    // fetched lazily rather than on every dashboard load.
+    const [departments, setDepartments] = useState([]);
+    const [showTrainingInterest, setShowTrainingInterest] = useState(false);
+    const [trainingInterestForm, setTrainingInterestForm] = useState({ title: '', trainingType: 'technical', description: '' });
+    const [registeringId, setRegisteringId] = useState(null);
 
     const load = useCallback(async () => {
         setLoading(true);
         setError(null);
         setBalanceError(null);
         try {
-            const [leaves, requests, trainings, attendance, balanceRes] = await Promise.all([
+            const [leaves, requests, trainings, attendance, balanceRes, available] = await Promise.all([
                 api.get('/leaves/me').catch(() => ({ data: { data: [] } })),
                 api.get('/requests/me').catch(() => ({ data: { data: [] } })),
                 api.get('/training/me').catch(() => ({ data: { data: [] } })),
@@ -92,13 +99,15 @@ const EmployeeDashboard = () => {
                 // that is indistinguishable from a real empty/zero balance
                 // (spec: no fake fallback values). The failure is surfaced
                 // separately via balanceError instead.
-                api.get('/leaves/balance').catch(err => ({ failed: true, err }))
+                api.get('/leaves/balance').catch(err => ({ failed: true, err })),
+                api.get('/training/available').catch(() => ({ data: { data: [] } }))
             ]);
 
             if (balanceRes.failed) {
                 setBalanceError(balanceRes.err?.response?.data?.message || 'Unable to retrieve leave balance. Please try again.');
             }
 
+            setAvailableTrainings(available.data.data || []);
             setData({
                 leaves: leaves.data.data || [],
                 requests: requests.data.data || [],
@@ -176,21 +185,41 @@ const EmployeeDashboard = () => {
         e.preventDefault();
         setBusy(true);
         try {
+            const { targetDepartment, ...rest } = requestForm;
+            const chosenDept = departments.find(d => d._id === targetDepartment);
+            const body = {
+                ...rest,
+                details: (rest.type === 'transfer' && chosenDept)
+                    ? { targetDepartment: chosenDept._id, targetDepartmentName: chosenDept.name }
+                    : {}
+            };
             if (requestResubmitTarget) {
-                await api.put(`/requests/${requestResubmitTarget}/resubmit`, requestForm);
+                await api.put(`/requests/${requestResubmitTarget}/resubmit`, body);
                 toast.success('Request corrected and resubmitted');
             } else {
-                await api.post('/requests', requestForm);
+                await api.post('/requests', body);
                 toast.success('Request submitted');
             }
             setShowRequest(false);
             setRequestResubmitTarget(null);
-            setRequestForm({ type: 'break_year', title: '', reason: '' });
+            setRequestForm({ type: 'break_year', title: '', reason: '', targetDepartment: '' });
             load();
         } catch (err) {
             toast.error(err.response?.data?.message || 'Could not submit the request');
         } finally {
             setBusy(false);
+        }
+    };
+
+    /** Departments are only needed once the Transfer request type is picked. */
+    const ensureDepartmentsLoaded = async () => {
+        if (departments.length > 0) return;
+        try {
+            const res = await api.get('/config');
+            setDepartments(res.data.data?.departments || []);
+        } catch {
+            // Non-fatal: the Transfer type simply has no department picker if
+            // this fails, same graceful degradation as the rest of this page.
         }
     };
 
@@ -200,9 +229,45 @@ const EmployeeDashboard = () => {
         setRequestForm({
             type: request.type || 'break_year',
             title: request.title || '',
-            reason: request.reason || ''
+            reason: request.reason || '',
+            targetDepartment: request.details?.targetDepartment || ''
         });
+        if (request.type === 'transfer') ensureDepartmentsLoaded();
         setShowRequest(true);
+    };
+
+    /** Self-register for an open training programme from the "Available Training" browse list. */
+    const registerForTraining = async (trainingId) => {
+        setRegisteringId(trainingId);
+        try {
+            await api.post(`/training/${trainingId}/register`);
+            toast.success('Registered for training');
+            load();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not register for this training');
+        } finally {
+            setRegisteringId(null);
+        }
+    };
+
+    /**
+     * Submit a personal training interest. Distinct from an organizational
+     * Training Need: this is always about the requester themselves and
+     * carries no department-head restriction (see trainingNeedController.createNeed).
+     */
+    const submitTrainingInterest = async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        try {
+            await api.post('/training-needs', { origin: 'personal', ...trainingInterestForm });
+            toast.success('Training interest submitted - HR will review it');
+            setShowTrainingInterest(false);
+            setTrainingInterestForm({ title: '', trainingType: 'technical', description: '' });
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not submit your training interest');
+        } finally {
+            setBusy(false);
+        }
     };
 
     const clock = async (action) => {
@@ -222,8 +287,8 @@ const EmployeeDashboard = () => {
     if (error) return <ErrorState message={error} onRetry={load} />;
 
     const today = data.attendance?.today;
-    const pendingLeave = data.leaves.filter(l => ['pending', 'under_review', 'returned_for_correction'].includes(l.status)).length;
-    const pendingRequests = data.requests.filter(r => ['submitted', 'returned_for_correction', 'processing'].includes(r.status)).length;
+    const pendingLeave = data.leaves.filter(l => ['pending', 'under_review', 'pending_approval', 'returned_for_correction'].includes(l.status)).length;
+    const pendingRequests = data.requests.filter(r => ['submitted', 'returned_for_correction', 'processing', 'pending_approval'].includes(r.status)).length;
 
     return (
         <div>
@@ -462,7 +527,13 @@ const EmployeeDashboard = () => {
 
                 {tab === 'training' && (
                     <>
-                        <SectionHeader title="My Training" description="Programmes you are registered for." />
+                        <SectionHeader
+                            title="My Training"
+                            description="Programmes you are registered for."
+                            action={<Button size="sm" onClick={() => setShowTrainingInterest(true)}>
+                                <FaPlus className="me-1" /> Request Training
+                            </Button>}
+                        />
                         {data.trainings.length === 0 ? (
                             <EmptyState icon={FaGraduationCap} title="No training yet"
                                         description="Training you register for appears here." />
@@ -486,6 +557,36 @@ const EmployeeDashboard = () => {
                                                 <div className="text-success mt-1" style={{ fontSize: '0.72rem' }}>Completed</div>
                                             )}
                                         </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="mt-4">
+                            <SectionHeader title="Available Training" description="Open programmes you can register for." />
+                        </div>
+                        {availableTrainings.length === 0 ? (
+                            <EmptyState icon={FaGraduationCap} title="Nothing open right now"
+                                        description="Training open for registration will appear here." />
+                        ) : (
+                            <div className="d-flex flex-column gap-2">
+                                {availableTrainings.map(training => (
+                                    <div key={training._id} className="d-flex justify-content-between align-items-center p-2 rounded"
+                                         style={{ border: '1px solid #E2E8F0' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div className="fw-semibold text-dark" style={{ fontSize: '0.85rem' }}>
+                                                {training.title}
+                                            </div>
+                                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                                {training.startDate && new Date(training.startDate).toLocaleDateString()}
+                                                {training.location ? ` · ${training.location}` : ''}
+                                                {training.seatsRemaining !== null ? ` · ${training.seatsRemaining} seat(s) left` : ''}
+                                            </div>
+                                        </div>
+                                        <Button size="sm" variant="outline-primary" disabled={registeringId === training._id}
+                                                onClick={() => registerForTraining(training._id)}>
+                                            {registeringId === training._id ? 'Registering…' : 'Register'}
+                                        </Button>
                                     </div>
                                 ))}
                             </div>
@@ -654,7 +755,11 @@ const EmployeeDashboard = () => {
                         <Form.Group className="mb-3">
                             <Form.Label style={{ fontSize: '0.8rem' }}>Request type</Form.Label>
                             <Form.Select value={requestForm.type}
-                                         onChange={e => setRequestForm({ ...requestForm, type: e.target.value })}>
+                                         onChange={e => {
+                                             const type = e.target.value;
+                                             setRequestForm({ ...requestForm, type });
+                                             if (type === 'transfer') ensureDepartmentsLoaded();
+                                         }}>
                                 <option value="break_year">Break-Year</option>
                                 <option value="resignation">Resignation</option>
                                 <option value="transfer">Transfer</option>
@@ -662,6 +767,19 @@ const EmployeeDashboard = () => {
                                 <option value="other">Other</option>
                             </Form.Select>
                         </Form.Group>
+                        {requestForm.type === 'transfer' && (
+                            <Form.Group className="mb-3">
+                                <Form.Label style={{ fontSize: '0.8rem' }}>Target department</Form.Label>
+                                <Form.Select required value={requestForm.targetDepartment}
+                                             onChange={e => setRequestForm({ ...requestForm, targetDepartment: e.target.value })}>
+                                    <option value="">Select a department…</option>
+                                    {departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                </Form.Select>
+                                <Form.Text className="text-muted" style={{ fontSize: '0.72rem' }}>
+                                    Your department only changes once this request is approved.
+                                </Form.Text>
+                            </Form.Group>
+                        )}
                         <Form.Group className="mb-3">
                             <Form.Label style={{ fontSize: '0.8rem' }}>Title</Form.Label>
                             <Form.Control required value={requestForm.title}
@@ -678,6 +796,42 @@ const EmployeeDashboard = () => {
                         <Button type="submit" disabled={busy}>
                             {busy ? 'Submitting…' : (requestResubmitTarget ? 'Resubmit request' : 'Submit request')}
                         </Button>
+                    </Modal.Footer>
+                </Form>
+            </Modal>
+
+            <Modal show={showTrainingInterest} onHide={() => setShowTrainingInterest(false)} centered>
+                <Form onSubmit={submitTrainingInterest}>
+                    <Modal.Header closeButton><Modal.Title>Request Training</Modal.Title></Modal.Header>
+                    <Modal.Body>
+                        <p className="text-muted" style={{ fontSize: '0.82rem' }}>
+                            A personal interest, not an organizational training programme request - HR will review it.
+                        </p>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Title</Form.Label>
+                            <Form.Control required value={trainingInterestForm.title}
+                                          onChange={e => setTrainingInterestForm({ ...trainingInterestForm, title: e.target.value })} />
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Type</Form.Label>
+                            <Form.Select value={trainingInterestForm.trainingType}
+                                         onChange={e => setTrainingInterestForm({ ...trainingInterestForm, trainingType: e.target.value })}>
+                                <option value="technical">Technical</option>
+                                <option value="soft_skills">Soft Skills</option>
+                                <option value="leadership">Leadership</option>
+                                <option value="compliance">Compliance</option>
+                                <option value="other">Other</option>
+                            </Form.Select>
+                        </Form.Group>
+                        <Form.Group>
+                            <Form.Label>Why would this help you?</Form.Label>
+                            <Form.Control as="textarea" rows={3} required value={trainingInterestForm.description}
+                                          onChange={e => setTrainingInterestForm({ ...trainingInterestForm, description: e.target.value })} />
+                        </Form.Group>
+                    </Modal.Body>
+                    <Modal.Footer>
+                        <Button variant="light" onClick={() => setShowTrainingInterest(false)}>Cancel</Button>
+                        <Button type="submit" disabled={busy}>{busy ? 'Submitting…' : 'Submit interest'}</Button>
                     </Modal.Footer>
                 </Form>
             </Modal>

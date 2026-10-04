@@ -41,11 +41,13 @@ const PIPELINE = [
 
 const TOP_CANDIDATES = 10;
 
+const ROLE_HOME = { employer: 'employer', hr_expert: 'hr-expert', hr_manager: 'hr-manager' };
+
 const RecruitmentReport = () => {
     const { jobId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const basePath = user?.role === 'hr_manager' ? '/hr-manager' : '/hr-expert';
+    const basePath = `/${ROLE_HOME[user?.role] || 'hr-expert'}`;
 
     const [vacancies, setVacancies] = useState([]);
     const [report, setReport] = useState(null);

@@ -21,10 +21,17 @@ const FILTERS = [
     { key: 'all', label: 'All' },
     { key: 'submitted', label: 'New' },
     { key: 'returned_for_correction', label: 'Sent back' },
-    { key: 'processing', label: 'Awaiting approval' },
+    { key: 'pending_approval', label: 'Awaiting approval' },
     { key: 'approved', label: 'Approved' },
     { key: 'rejected', label: 'Rejected' }
 ];
+
+// 'processing' is the pre-rename value for the same "forwarded, awaiting HR
+// Manager" stage now called 'pending_approval' (see
+// employeeRequestController.js); both are recognised so a request forwarded
+// before the rename still displays and behaves identically to one forwarded
+// after it.
+const AWAITING_MANAGER_STATUSES = ['processing', 'pending_approval'];
 
 /**
  * Employee requests (spec §12): break-year, resignation, transfer and more.
@@ -96,8 +103,12 @@ const RequestManagement = () => {
     const decide = async (request, outcome, decisionReason) => {
         setBusyId(request._id);
         try {
-            await api.put(`/requests/${request._id}/decision`, { outcome, reason: decisionReason });
+            const res = await api.put(`/requests/${request._id}/decision`, { outcome, reason: decisionReason });
             toast.success(`Request ${outcome}`);
+            // Confirms the Employee record's own update (resignation/
+            // termination/transfer) so HR sees it took effect immediately,
+            // not just that the request itself changed status.
+            if (res.data?.employeeSync) toast.info(res.data.employeeSync);
             setRejectTarget(null);
             setReason('');
             load();
@@ -139,7 +150,7 @@ const RequestManagement = () => {
                     <div className="d-flex flex-column gap-2">
                         {requests.map(request => {
                             const isNew = request.status === 'submitted';
-                            const awaiting = request.status === 'processing';
+                            const awaiting = AWAITING_MANAGER_STATUSES.includes(request.status);
                             return (
                                 <div key={request._id} className="p-3 rounded" style={{ border: '1px solid #E2E8F0' }}>
                                     <div className="d-flex justify-content-between align-items-start flex-wrap gap-3">
@@ -163,6 +174,11 @@ const RequestManagement = () => {
                                             {request.reason && (
                                                 <div className="text-dark mt-1" style={{ fontSize: '0.8rem' }}>
                                                     {request.reason}
+                                                </div>
+                                            )}
+                                            {request.type === 'transfer' && request.details?.targetDepartmentName && (
+                                                <div className="text-muted mt-1" style={{ fontSize: '0.78rem' }}>
+                                                    Requested target department: <strong>{request.details.targetDepartmentName}</strong>
                                                 </div>
                                             )}
                                             {request.returnReason && request.status === 'returned_for_correction' && (

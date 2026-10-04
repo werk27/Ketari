@@ -66,6 +66,22 @@ const CAPABILITIES = {
     TRAINING_RECORD: 'training:record',
     TRAINING_APPROVE: 'training:approve',
     TRAINING_PARTICIPATE: 'training:participate',
+    // Training Need / personal interest request - the same broad-grant,
+    // narrow-in-controller pattern as REQUISITION_CREATE: any employee holds
+    // the capability, but raising a DEPARTMENT need is only ever allowed for
+    // the department's assigned head (or their active delegate) - see
+    // trainingNeedController.createNeed. A PERSONAL interest request has no
+    // such restriction - it is always about the requester themselves.
+    TRAINING_NEED_CREATE: 'training_need:create',
+    TRAINING_NEED_VIEW: 'training_need:view',
+    // Department Head nominates one of their own department's employees as a
+    // participant on an already-approved programme - same broad-grant,
+    // narrow-in-controller pattern (see trainingController.nominateParticipant).
+    TRAINING_NOMINATE: 'training:nominate',
+    // Employer's final say on a training programme whose estimated cost or
+    // strategic flag crosses the organization's threshold - never a
+    // mandatory step for ordinary training (see trainingController.decideTraining).
+    TRAINING_EMPLOYER_APPROVE: 'training:employer_approve',
 
     // ---------- Delegation ----------
     DELEGATION_VIEW: 'delegation:view',
@@ -202,7 +218,14 @@ const EMPLOYEE_CAPABILITIES = [
     // Department Head (Configuration.departments[].manager) of the
     // department named on the requisition. An employee with no department
     // headed will always be rejected there.
-    C.REQUISITION_CREATE, C.REQUISITION_VIEW
+    C.REQUISITION_CREATE, C.REQUISITION_VIEW,
+    // Training Need: same broad-grant/narrow-in-controller shape as
+    // REQUISITION_CREATE above. A department need is only accepted from that
+    // department's assigned head (or delegate); a personal interest request
+    // has no such restriction. TRAINING_NOMINATE is likewise broad here -
+    // trainingController.nominateParticipant rejects anyone who does not
+    // head the target employee's department.
+    C.TRAINING_NEED_CREATE, C.TRAINING_NEED_VIEW, C.TRAINING_NOMINATE
 ];
 
 const ROLE_CAPABILITIES = {
@@ -235,6 +258,10 @@ const ROLE_CAPABILITIES = {
         // role) but never processes or approves them - that stays with HR.
         C.REQUISITION_CREATE, C.REQUISITION_VIEW,
         C.LEAVE_VIEW, C.REQUEST_VIEW, C.TRAINING_VIEW,
+        // Final say on the rare training programme that needs it (high-cost
+        // or explicitly flagged strategic) - never a mandatory step for
+        // ordinary training, see trainingController.decideTraining.
+        C.TRAINING_EMPLOYER_APPROVE,
         C.DELEGATION_VIEW, C.DELEGATION_CREATE, C.DELEGATION_APPROVE,
         C.ATTENDANCE_VIEW, C.COMPLAINT_VIEW, C.DOCUMENT_VIEW,
         C.REPORT_EMPLOYER, C.REPORT_RECRUITMENT, C.REPORT_HR

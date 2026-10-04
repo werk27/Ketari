@@ -39,10 +39,16 @@ const loadConfiguration = (employerId) =>
  * Departments this user currently heads inside `employerId` - either by
  * direct assignment or as the active delegate of an assigned head.
  *
+ * `capability` selects which in-effect delegation counts as "covering" the
+ * headship for the caller's purpose (default: raising a Job Requisition).
+ * Training Need creation and participant nomination reuse this same helper
+ * with CAPABILITIES.TRAINING_NEED_CREATE / TRAINING_NOMINATE so a department
+ * head's delegate is recognised there too, without a second implementation.
+ *
  * Returns the department sub-documents themselves so callers get the name,
  * code and description without a second read.
  */
-const headedDepartments = async (user, employerId, config = undefined) => {
+const headedDepartments = async (user, employerId, config = undefined, capability = undefined) => {
     if (!user || !employerId) return [];
 
     const configuration = config === undefined ? await loadConfiguration(employerId) : config;
@@ -55,7 +61,7 @@ const headedDepartments = async (user, employerId, config = undefined) => {
     // responsibility to this user. Required lazily to avoid import cycles.
     const { resolveActingForDelegators } = require('./delegationCapabilities');
     const { CAPABILITIES } = require('../config/permissions');
-    const actingFor = await resolveActingForDelegators(user, CAPABILITIES.REQUISITION_CREATE);
+    const actingFor = await resolveActingForDelegators(user, capability || CAPABILITIES.REQUISITION_CREATE);
     const covered = actingFor.length === 0
         ? []
         : usable.filter(d => d.manager && actingFor.includes(String(d.manager)));
@@ -80,8 +86,8 @@ const positionsForDepartments = (config, departmentIds) => {
  * True when this user heads the given department. The single authorization
  * question the requisition workflow asks.
  */
-const headsDepartment = async (user, employerId, departmentId) => {
-    const departments = await headedDepartments(user, employerId);
+const headsDepartment = async (user, employerId, departmentId, capability = undefined) => {
+    const departments = await headedDepartments(user, employerId, undefined, capability);
     return departments.some(d => sameId(d._id, departmentId));
 };
 

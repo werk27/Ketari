@@ -39,7 +39,7 @@ const EDITABLE_STATUSES = ['draft', 'rejected'];
 /** Tell the HR Expert how to legitimately change a vacancy they can no longer touch. */
 const reworkHint = (status) => {
     if (status === 'pending_approval') {
-        return 'It is awaiting HR Manager approval - ask them to return it to you first.';
+        return 'It is awaiting HR Manager approval - withdraw it, or ask them to reject it, first.';
     }
     if (PUBLIC_STATUSES.includes(status)) {
         return 'It is already published; close it instead and create a new vacancy.';
@@ -460,6 +460,58 @@ exports.submitJob = async (req, res) => {
         res.status(200).json({
             success: true,
             message: 'Vacancy submitted for HR Manager approval',
+            job
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    Withdraw a vacancy submitted for HR Manager approval, back to the
+//          HR Expert's own draft work
+// @route   PUT /api/jobs/:id/withdraw
+// @access  Private (HR Expert who owns it, or their active delegate)
+//
+// A vacancy pending approval had no way back to the HR Expert if the HR
+// Manager simply never acted on it (no reject, no approve) - recruitment
+// pressure had no valve. This gives the HR Expert who submitted it (never
+// the HR Manager - that is what reject is for) an explicit way to retract
+// it themselves, landing back in 'draft' as an ordinary edit/resubmit cycle
+// exactly like a rejected vacancy already does (see EDITABLE_STATUSES,
+// submitJob) - no new status is introduced. Once withdrawn, approveJob and
+// rejectJob both already refuse anything that is not 'pending_approval', so
+// a withdrawn vacancy can never be accidentally approved afterward.
+exports.withdrawJob = async (req, res) => {
+    try {
+        const { job, error } = await findScopedJob(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        const isOwner = await canActForVacancyOwner(req, job.hr_expert, CAPABILITIES.VACANCY_SUBMIT);
+        if (!isOwner) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only the HR Expert who submitted this vacancy (or their active delegate) can withdraw it'
+            });
+        }
+
+        if (job.status !== 'pending_approval') {
+            return res.status(400).json({
+                success: false,
+                message: `Only a vacancy pending approval can be withdrawn (current status: ${job.status})`
+            });
+        }
+
+        job.status = 'draft';
+        job.rejectionReason = '';
+        recordStatus(job, 'draft', req.user.id, req.body.note || 'Withdrawn by the HR Expert before an HR Manager decision');
+        await job.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Vacancy withdrawn - it is back in your drafts and can be edited and resubmitted',
             job
         });
     } catch (error) {

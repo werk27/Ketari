@@ -115,6 +115,17 @@ const JobRequisitionSchema = new mongoose.Schema({
         trim: true
     },
 
+    // 'returned' has exactly one meaning: HR sent this back to the requester
+    // and is awaiting their response - never two different states sharing
+    // one name. What differs is how the requester responds, and that is
+    // already distinguishable in the audit trail (auditTrail below) by its
+    // recorded action and note, not by a second status value:
+    //   - a pure clarifying question -> PUT /:id/clarify (requisitionController.
+    //     respondToClarification) records their written reply and goes
+    //     straight back to 'submitted', unedited, for another HR look.
+    //   - a substantive correction -> PUT /:id (updateRequisition) edits the
+    //     requisition itself and goes back to 'draft', requiring an explicit
+    //     PUT /:id/submit to resubmit it.
     status: {
         type: String,
         enum: ['draft', 'submitted', 'returned', 'pending_approval', 'approved', 'rejected', 'job_created'],

@@ -5,6 +5,17 @@ const { EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
 const auditService = require('../services/auditService');
 const notificationService = require('../services/notificationService');
 const emailService = require('../services/emailService');
+const { roleLabel, loadDepartmentHeadIndex, annotateAccount } = require('../services/roleDisplay');
+
+/** Push a workflow transition onto the record's own registration history. */
+const pushRegistrationHistory = (employee, status, userId, note = '') => {
+    employee.registration.history.push({
+        status,
+        changedBy: userId,
+        changedAt: new Date(),
+        note
+    });
+};
 
 /**
  * Employee Information module.
@@ -18,9 +29,6 @@ const emailService = require('../services/emailService');
  * role such as hr_expert or hr_manager is only ever granted to the User
  * account already linked to an existing Employee - never created on its own.
  */
-
-const ROLE_LABELS = { employee: 'Employee', hr_expert: 'HR Expert', hr_manager: 'HR Manager', employer: 'Employer' };
-const roleLabel = (role) => ROLE_LABELS[role] || role;
 
 /**
  * Optional credential-delivery email for a newly created or role-changed
@@ -101,7 +109,10 @@ const findScopedEmployee = async (employeeId, req) => {
 
 // @desc    Create employee
 // @route   POST /api/employees
-// @access  Private (HR Expert - records employee information)
+// @access  Private (HR Expert - records employee information; HR Manager
+//          approval is required before an HR-Expert-recorded employee
+//          becomes officially active - see the registration/* endpoints
+//          below)
 exports.createEmployee = async (req, res) => {
     try {
         const { personalInfo, contactInfo, employmentInfo, compensation, userId } = req.body;
@@ -127,6 +138,15 @@ exports.createEmployee = async (req, res) => {
         }
 
         const employeeId = await nextEmployeeId(req.employerId);
+
+        // An HR Expert only ever RECORDS and SUBMITS - the record is not yet
+        // an officially active employee until an HR Manager approves it (see
+        // approveRegistration below). The Employer (bootstrapping an
+        // organization that has no HR staff yet) and the recruitment hire
+        // pipeline (onboardingService - already the result of an HR
+        // Manager's own hiring decision) are both auto-approved so neither
+        // path is blocked waiting for a review that could never come.
+        const needsApproval = req.user.role === 'hr_expert';
 
         const employee = await Employee.create({
             employer: req.employerId,
@@ -190,13 +210,50 @@ exports.createEmployee = async (req, res) => {
                 bankAccount: compensation?.bankAccount || '',
                 taxId: compensation?.taxId || ''
             },
-            status: 'active'
+            status: needsApproval ? 'pending_approval' : 'active',
+            registration: {
+                submittedBy: req.user.id,
+                submittedAt: new Date(),
+                reviewedBy: needsApproval ? null : req.user.id,
+                reviewedAt: needsApproval ? null : new Date(),
+                history: [{
+                    status: needsApproval ? 'pending_approval' : 'active',
+                    changedBy: req.user.id,
+                    changedAt: new Date(),
+                    note: needsApproval
+                        ? 'Recorded by HR Expert, submitted for HR Manager approval'
+                        : `Recorded and auto-approved (${roleLabel(req.user.role)})`
+                }]
+            }
+        });
+
+        if (needsApproval) {
+            await notificationService.notifyRoles({
+                employer: req.employerId,
+                roles: ['hr_manager'],
+                type: 'account_update',
+                title: 'New employee registration awaiting approval',
+                message: `${employee.personalInfo.firstName} ${employee.personalInfo.lastName} was recorded by ${req.user.name} and needs your approval to become active.`,
+                link: '/hr-manager/employees'
+            });
+        }
+
+        await auditService.record(req, {
+            action: 'employee.created',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: needsApproval
+                ? 'Employee recorded, submitted for HR Manager approval'
+                : 'Employee recorded and auto-approved',
+            to: employee.status
         });
 
         res.status(201).json({
             success: true,
             data: employee,
-            message: 'Employee added successfully'
+            message: needsApproval
+                ? 'Employee recorded and submitted for HR Manager approval'
+                : 'Employee added successfully'
         });
     } catch (error) {
         console.error('Create Employee Error:', error);
@@ -213,6 +270,215 @@ exports.createEmployee = async (req, res) => {
             success: false,
             message: error.message || 'Server Error'
         });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Registration approval workflow.
+//
+// An HR Expert's newly recorded employee starts 'pending_approval' (see
+// createEmployee) and is not an officially active employee until an HR
+// Manager approves it. Mirrors the separation-of-duties pattern already used
+// by the onboarding workflow (onboardingController): the person who submitted
+// can never also be the one who approves, enforced here even though the
+// employee:record / employee:delete capability split already keeps an HR
+// Expert from calling the approve/reject endpoints at all - a defensive
+// second check that stays correct even if someone's role changes later.
+// ---------------------------------------------------------------------------
+
+// @desc    HR Manager approves a pending employee registration
+// @route   PUT /api/employees/:id/registration/approve
+// @access  Private (employee:delete - the HR Manager oversight capability)
+exports.approveRegistration = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (employee.status !== 'pending_approval') {
+            return res.status(400).json({
+                success: false,
+                message: `Only a pending registration can be approved (current status: ${employee.status})`
+            });
+        }
+
+        if (employee.registration.submittedBy && employee.registration.submittedBy.toString() === req.user.id) {
+            return res.status(403).json({
+                success: false,
+                message: 'You cannot approve a registration you submitted yourself'
+            });
+        }
+
+        const previousStatus = employee.status;
+        employee.status = 'active';
+        employee.registration.reviewedBy = req.user.id;
+        employee.registration.reviewedAt = new Date();
+        employee.registration.rejectionReason = '';
+        pushRegistrationHistory(employee, 'active', req.user.id, req.body.note || 'Approved by HR Manager');
+        await employee.save();
+
+        if (employee.registration.submittedBy) {
+            await notificationService.notify({
+                user: employee.registration.submittedBy,
+                employer: employee.employer,
+                type: 'account_update',
+                title: 'Employee registration approved',
+                message: `${employee.personalInfo.firstName} ${employee.personalInfo.lastName} is now an active employee.`,
+                link: '/hr-expert/employees'
+            });
+        }
+
+        await auditService.record(req, {
+            action: 'employee.registration_approved',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: req.body.note || 'Registration approved by HR Manager',
+            from: previousStatus,
+            to: employee.status
+        });
+
+        res.status(200).json({ success: true, message: 'Employee registration approved', data: employee });
+    } catch (error) {
+        console.error('Approve Registration Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    HR Manager rejects a pending employee registration
+// @route   PUT /api/employees/:id/registration/reject
+// @access  Private (employee:delete - the HR Manager oversight capability)
+exports.rejectRegistration = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        const { reason } = req.body;
+        if (!reason || !reason.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'A rejection reason is required so the HR Expert knows what to correct'
+            });
+        }
+
+        if (employee.status !== 'pending_approval') {
+            return res.status(400).json({
+                success: false,
+                message: `Only a pending registration can be rejected (current status: ${employee.status})`
+            });
+        }
+
+        if (employee.registration.submittedBy && employee.registration.submittedBy.toString() === req.user.id) {
+            return res.status(403).json({
+                success: false,
+                message: 'You cannot reject a registration you submitted yourself'
+            });
+        }
+
+        const previousStatus = employee.status;
+        employee.status = 'rejected';
+        employee.registration.reviewedBy = req.user.id;
+        employee.registration.reviewedAt = new Date();
+        employee.registration.rejectionReason = reason.trim();
+        pushRegistrationHistory(employee, 'rejected', req.user.id, reason.trim());
+        await employee.save();
+
+        if (employee.registration.submittedBy) {
+            await notificationService.notify({
+                user: employee.registration.submittedBy,
+                employer: employee.employer,
+                type: 'account_update',
+                title: 'Employee registration rejected',
+                message: `${employee.personalInfo.firstName} ${employee.personalInfo.lastName}'s registration was rejected: ${reason.trim()}`,
+                link: '/hr-expert/employees'
+            });
+        }
+
+        await auditService.record(req, {
+            action: 'employee.registration_rejected',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: reason.trim(),
+            from: previousStatus,
+            to: employee.status
+        });
+
+        res.status(200).json({ success: true, message: 'Employee registration rejected', data: employee });
+    } catch (error) {
+        console.error('Reject Registration Error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// @desc    HR Expert corrects and resubmits a rejected employee registration
+// @route   PUT /api/employees/:id/registration/resubmit
+// @access  Private (employee:record - HR Expert)
+exports.resubmitRegistration = async (req, res) => {
+    try {
+        const { employee, error } = await findScopedEmployee(req.params.id, req);
+        if (error) {
+            return res.status(error.code).json({ success: false, message: error.message });
+        }
+
+        if (employee.status !== 'rejected') {
+            return res.status(400).json({
+                success: false,
+                message: `Only a rejected registration can be resubmitted (current status: ${employee.status})`
+            });
+        }
+
+        // Correction is optional here - the HR Expert may already have fixed
+        // the record via the regular PUT /api/employees/:id and only needs
+        // this call to send it back for approval. Identity/ownership fields
+        // are never client-controlled, exactly like updateEmployee.
+        const { _id, employer, employeeId, user, createdAt, status, registration, ...updates } = req.body;
+        if (Object.keys(updates).length > 0) {
+            Object.assign(employee, updates);
+        }
+
+        const previousStatus = employee.status;
+        employee.status = 'pending_approval';
+        employee.registration.submittedBy = req.user.id;
+        employee.registration.submittedAt = new Date();
+        employee.registration.reviewedBy = null;
+        employee.registration.reviewedAt = null;
+        employee.registration.rejectionReason = '';
+        pushRegistrationHistory(employee, 'pending_approval', req.user.id, req.body.note || 'Corrected and resubmitted by HR Expert');
+        await employee.save();
+
+        await notificationService.notifyRoles({
+            employer: employee.employer,
+            roles: ['hr_manager'],
+            type: 'account_update',
+            title: 'Employee registration resubmitted',
+            message: `${employee.personalInfo.firstName} ${employee.personalInfo.lastName}'s registration was corrected and resubmitted for approval.`,
+            link: '/hr-manager/employees'
+        });
+
+        await auditService.record(req, {
+            action: 'employee.registration_resubmitted',
+            entity: 'Employee',
+            entityId: employee._id,
+            details: req.body.note || 'Corrected and resubmitted by HR Expert',
+            from: previousStatus,
+            to: employee.status
+        });
+
+        res.status(200).json({ success: true, message: 'Resubmitted for HR Manager approval', data: employee });
+    } catch (error) {
+        console.error('Resubmit Registration Error:', error);
+
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Validation Error',
+                errors: Object.values(error.errors).map(err => err.message)
+            });
+        }
+
+        res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
 
@@ -240,12 +506,34 @@ exports.getEmployees = async (req, res) => {
 
         const employees = await Employee.find(query)
             .populate('user', 'name email role status')
-            .sort({ createdAt: -1 });
+            .populate('registration.submittedBy', 'name email')
+            .populate('registration.reviewedBy', 'name email')
+            .sort({ createdAt: -1 })
+            .lean();
+
+        // Department Head is not stored on the account (see roleDisplay.js) -
+        // annotate every row here once so the directory never falls back to
+        // showing a bare "Employee" for someone who actually heads a
+        // department, and role-based filtering below can rely on it too.
+        const headIndex = await loadDepartmentHeadIndex(req.employerId);
+        let annotated = employees.map(employee => ({
+            ...employee,
+            user: annotateAccount(employee.user, headIndex)
+        }));
+
+        // "department_head" is a virtual filter value (see EmployeeDirectory) -
+        // it selects on the annotation above rather than a stored role, since
+        // Department Head is never a value `employee.user.role` can hold.
+        if (req.query.role === 'department_head') {
+            annotated = annotated.filter(e => e.user?.isDepartmentHead);
+        } else if (req.query.role) {
+            annotated = annotated.filter(e => e.user?.role === req.query.role);
+        }
 
         res.status(200).json({
             success: true,
-            count: employees.length,
-            data: employees
+            count: annotated.length,
+            data: annotated
         });
     } catch (error) {
         console.error('Get Employees Error:', error);
@@ -279,7 +567,9 @@ exports.getEmployee = async (req, res) => {
     try {
         const employee = await Employee.findById(req.params.id)
             .populate('user', 'name email role status')
-            .populate('employmentInfo.supervisor', 'name email');
+            .populate('employmentInfo.supervisor', 'name email')
+            .populate('registration.submittedBy', 'name email')
+            .populate('registration.reviewedBy', 'name email');
 
         if (!employee) {
             return res.status(404).json({ success: false, message: 'Employee not found' });
@@ -297,7 +587,13 @@ exports.getEmployee = async (req, res) => {
             });
         }
 
-        res.status(200).json({ success: true, data: employee });
+        // Same Department Head annotation as the directory list, so a
+        // profile opened from any screen shows the identical assigned role.
+        const headIndex = await loadDepartmentHeadIndex(employee.employer);
+        const data = employee.toObject();
+        data.user = annotateAccount(data.user, headIndex);
+
+        res.status(200).json({ success: true, data });
     } catch (error) {
         console.error('Get Employee Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -314,8 +610,14 @@ exports.updateEmployee = async (req, res) => {
             return res.status(error.code).json({ success: false, message: error.message });
         }
 
-        // Identity and ownership fields are never client-controlled.
-        const { _id, employer, employeeId, user, createdAt, ...updates } = req.body;
+        // Identity and ownership fields are never client-controlled. `status`
+        // and `registration` are excluded too - otherwise an HR Expert could
+        // bypass the approval workflow (createEmployee /
+        // approveRegistration / rejectRegistration / resubmitRegistration)
+        // simply by sending status: 'active' through this general-purpose
+        // edit endpoint. Use the dedicated registration/* actions to move
+        // those forward instead.
+        const { _id, employer, employeeId, user, createdAt, status, registration, ...updates } = req.body;
 
         Object.assign(employee, updates);
         await employee.save();

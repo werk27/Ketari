@@ -47,6 +47,7 @@ import JobRequisitions from './components/hr/JobRequisitions';
 import RequisitionForm from './components/hr/RequisitionForm';
 import RequisitionReview from './components/hr/RequisitionReview';
 import RecruitmentReport from './components/hr/RecruitmentReport';
+import AttendanceManagement from './components/hr/AttendanceManagement';
 
 // Employee self-service
 import EmployeeDashboard from './components/employee/EmployeeDashboard';
@@ -60,7 +61,7 @@ import DepartmentDashboard from './components/department/DepartmentDashboard';
 import MyDepartment from './components/department/MyDepartment';
 import DepartmentEmployees from './components/department/DepartmentEmployees';
 import RecruitmentStatus from './components/department/RecruitmentStatus';
-
+import TrainingNeeds from './components/employee/TrainingNeeds';
 // Employer / platform
 import EmployerDashboard from './components/employer/EmployerDashboard';
 import EmployerTeam from './components/employer/EmployerTeam';
@@ -171,6 +172,7 @@ function AppContent() {
                         <Route path="leave" element={<LeaveManagement />} />
                         <Route path="requests" element={<RequestManagement />} />
                         <Route path="training" element={<TrainingManagement />} />
+                        <Route path="attendance" element={<AttendanceManagement />} />
                         <Route path="complaints" element={<ComplaintsManagement />} />
                         <Route path="delegation" element={<DelegationManagement />} />
                         <Route path="my-hr" element={<EmployeeDashboard />} />
@@ -198,6 +200,7 @@ function AppContent() {
                         <Route path="leave" element={<LeaveManagement />} />
                         <Route path="requests" element={<RequestManagement />} />
                         <Route path="training" element={<TrainingManagement />} />
+                        <Route path="attendance" element={<AttendanceManagement />} />
                         <Route path="complaints" element={<ComplaintsManagement />} />
                         <Route path="delegation" element={<DelegationManagement />} />
                         <Route path="reports" element={<RecruitmentReport />} />
@@ -218,6 +221,7 @@ function AppContent() {
                         <Route path="team" element={<EmployerTeam />} />
                         <Route path="configuration" element={<ConfigurationManager />} />
                         <Route path="employees" element={<EmployeeDirectory />} />
+                        <Route path="onboarding" element={<OnboardingQueue />} />
                         <Route path="leave" element={<LeaveManagement />} />
                         <Route path="requests" element={<RequestManagement />} />
                         <Route path="training" element={<TrainingManagement />} />
@@ -229,6 +233,8 @@ function AppContent() {
                         <Route path="requisitions/:id" element={<RequisitionReview />} />
                         <Route path="requisitions/:id/edit" element={<RequisitionForm />} />
                         <Route path="applications" element={<ApplicationsHub />} />
+                        <Route path="reports" element={<RecruitmentReport />} />
+                        <Route path="reports/:jobId" element={<RecruitmentReport />} />
                     </Route>
 
                     {/* ============================================
@@ -267,6 +273,7 @@ function AppContent() {
                         <Route path="department" element={<DepartmentDashboard />} />
                         <Route path="department/profile" element={<MyDepartment />} />
                         <Route path="department/employees" element={<DepartmentEmployees />} />
+                        <Route path="department/training-needs" element={<TrainingNeeds />} />
                         <Route path="recruitment" element={<RecruitmentStatus />} />
                     </Route>
 

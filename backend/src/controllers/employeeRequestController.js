@@ -1,12 +1,13 @@
 const EmployeeRequest = require('../models/EmployeeRequest');
 const Employee = require('../models/Employee');
+const Configuration = require('../models/Configuration');
 const notificationService = require('../services/notificationService');
 
 /**
  * Employee Requests (break-year, resignation, transfer, termination, promotion).
  *
  * Workflow (spec §12 / §32):
- *   submitted -> processing (HR Expert) -> approved | rejected (HR Manager) -> completed
+ *   submitted -> pending_approval (HR Expert) -> approved | rejected (HR Manager) -> completed
  *   with a detour: submitted -> returned_for_correction (HR Expert "Send
  *   Back") -> resubmitted by the requester -> submitted again.
  *
@@ -14,10 +15,100 @@ const notificationService = require('../services/notificationService');
  * is reserved for the HR Manager - the same separation-of-duties rule as the
  * Leave and Job Requisition workflows.
  * The person who processes a request may never be the person who approves it.
+ *
+ * 'processing' is the pre-rename value for the "HR Expert forwarded,
+ * awaiting HR Manager" stage now called 'pending_approval' (the same name
+ * Leave, Job Requisition and Training use for the identical stage - see
+ * AWAITING_MANAGER_STATUSES below). Both are accepted everywhere so a
+ * request forwarded before the rename still behaves identically to one
+ * forwarded after it.
  */
+
+// See the module comment above.
+const AWAITING_MANAGER_STATUSES = ['processing', 'pending_approval'];
 
 const recordHistory = (request, status, userId, note = '') => {
     request.history.push({ status, changedBy: userId, changedAt: new Date(), note });
+};
+
+/**
+ * Apply an APPROVED request's real-world effect to the Employee record it
+ * belongs to - resignation/termination end the employment, a transfer moves
+ * the department. Approving the request used to only ever change the
+ * request's own status, leaving the Employee record silently out of sync
+ * (still "active" after a resignation, never actually moved after a
+ * transfer).
+ *
+ * Called BEFORE the request itself is saved as approved (see decideRequest)
+ * rather than inside a database transaction: this deployment's MongoDB runs
+ * as a standalone instance, not a replica set, and multi-document
+ * transactions are only ever available on a replica set/mongos - attempting
+ * one here fails outright ("Transaction numbers are only allowed on a
+ * replica set member or mongos"). Ordering it first is the practical
+ * substitute: if the Employee update fails, it throws and the request is
+ * never saved as approved at all, so the two can never end up disagreeing
+ * with each other in the way this fix exists to prevent - the request simply
+ * stays exactly as it was and the caller can retry.
+ *
+ * Returns a short human-readable summary for the API response, or null when
+ * this request type has no Employee-record effect (break_year, promotion,
+ * other) or the effect could not be applied (see the transfer branch).
+ */
+const applyDecisionToEmployee = async (request, userId) => {
+    if (!['resignation', 'termination', 'transfer'].includes(request.type)) {
+        return null;
+    }
+
+    const employeeId = request.employee?._id || request.employee;
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+        return 'Approved, but no linked Employee record was found to update.';
+    }
+
+    if (request.type === 'resignation' || request.type === 'termination') {
+        const effectiveDate = request.endDate || new Date();
+        const newStatus = request.type === 'resignation' ? 'resigned' : 'terminated';
+
+        employee.status = newStatus;
+        employee.employmentInfo.employmentStatus = newStatus;
+        employee.employmentInfo.terminationDate = effectiveDate;
+        employee.employmentInfo.terminationReason = request.reason || `${request.type === 'resignation' ? 'Resignation' : 'Termination'} request approved: ${request.title}`;
+        employee.employmentHistory.push({
+            type: 'status_change',
+            employmentStatus: newStatus,
+            effectiveDate,
+            note: `${request.type === 'resignation' ? 'Resignation' : 'Termination'} request approved: ${request.title}`,
+            recordedBy: userId
+        });
+        await employee.save();
+        return `Employee record updated: employment status set to "${newStatus}".`;
+    }
+
+    // transfer
+    const targetDepartmentId = request.details && request.details.targetDepartment;
+    if (!targetDepartmentId) {
+        return 'Approved, but no target department was specified on the request - update the employee record manually.';
+    }
+
+    const config = await Configuration.findOne({ employer: request.employer }).select('departments');
+    const targetDepartment = config && config.departments && config.departments.id
+        ? config.departments.id(targetDepartmentId)
+        : null;
+    if (!targetDepartment || targetDepartment.status === 'inactive') {
+        return 'Approved, but the requested target department could not be found or is inactive - update the employee record manually.';
+    }
+
+    const previousDepartment = employee.employmentInfo.department;
+    employee.employmentInfo.department = targetDepartment._id;
+    employee.employmentHistory.push({
+        type: 'transfer',
+        department: targetDepartment._id,
+        effectiveDate: request.startDate || new Date(),
+        note: `Transfer request approved: ${request.title} (${previousDepartment ? 'from previous department ' : ''}to ${targetDepartment.name})`,
+        recordedBy: userId
+    });
+    await employee.save();
+    return `Employee record updated: department set to "${targetDepartment.name}".`;
 };
 
 /** Resolve (or create) the employee record backing the signed-in user. */
@@ -121,7 +212,11 @@ exports.createRequest = async (req, res) => {
 exports.getRequests = async (req, res) => {
     try {
         const query = { employer: req.employerId };
-        if (req.query.status) query.status = req.query.status;
+        if (req.query.status) {
+            query.status = AWAITING_MANAGER_STATUSES.includes(req.query.status)
+                ? { $in: AWAITING_MANAGER_STATUSES }
+                : req.query.status;
+        }
         if (req.query.type) query.type = req.query.type;
 
         const requests = await EmployeeRequest.find(query)
@@ -170,11 +265,11 @@ exports.processRequest = async (req, res) => {
             });
         }
 
-        request.status = 'processing';
+        request.status = 'pending_approval';
         request.processedBy = req.user.id;
         request.processedAt = new Date();
         request.processingNote = req.body.note || '';
-        recordHistory(request, 'processing', req.user.id, req.body.note || 'Forwarded for approval');
+        recordHistory(request, 'pending_approval', req.user.id, req.body.note || 'Forwarded for approval');
         await request.save();
 
         await notificationService.notifyRoles({
@@ -325,7 +420,7 @@ exports.decideRequest = async (req, res) => {
             return res.status(error.code).json({ success: false, message: error.message });
         }
 
-        if (!['submitted', 'processing'].includes(request.status)) {
+        if (!['submitted', ...AWAITING_MANAGER_STATUSES].includes(request.status)) {
             return res.status(400).json({
                 success: false,
                 message: `This request has already been ${request.status}`
@@ -345,6 +440,16 @@ exports.decideRequest = async (req, res) => {
                 success: false,
                 message: 'You cannot approve a request you processed yourself'
             });
+        }
+
+        // Apply the Employee-record effect BEFORE saving the request as
+        // approved (see applyDecisionToEmployee's own comment for why this
+        // isn't a database transaction) - if it throws, the request is never
+        // saved, so it can never end up "approved" while the Employee stays
+        // silently out of sync, which is exactly the bug this closes.
+        let employeeSyncSummary = null;
+        if (outcome === 'approved') {
+            employeeSyncSummary = await applyDecisionToEmployee(request, req.user.id);
         }
 
         request.status = outcome;
@@ -367,7 +472,12 @@ exports.decideRequest = async (req, res) => {
             });
         }
 
-        res.status(200).json({ success: true, message: `Request ${outcome}`, data: request });
+        res.status(200).json({
+            success: true,
+            message: `Request ${outcome}`,
+            data: request,
+            employeeSync: employeeSyncSummary
+        });
     } catch (error) {
         console.error('Decide Request Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -416,7 +526,7 @@ exports.cancelRequest = async (req, res) => {
             return res.status(403).json({ success: false, message: 'You can only cancel your own request' });
         }
 
-        if (!['submitted', 'returned_for_correction', 'processing'].includes(request.status)) {
+        if (!['submitted', 'returned_for_correction', ...AWAITING_MANAGER_STATUSES].includes(request.status)) {
             return res.status(400).json({
                 success: false,
                 message: `This request can no longer be cancelled (status: ${request.status})`

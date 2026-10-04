@@ -73,7 +73,30 @@ const STATUS_STYLES = {
     declined_by_delegate: { label: 'Declined by Delegate', bg: '#FEE2E2', color: '#991B1B' },
     scheduled: { label: 'Scheduled', bg: '#CFFAFE', color: '#155E75' },
     revoked: { label: 'Revoked', bg: '#FEE2E2', color: '#991B1B' },
-    completed: { label: 'Completed', bg: '#F1F5F9', color: '#475569' }
+    completed: { label: 'Completed', bg: '#F1F5F9', color: '#475569' },
+
+    // Training workflow (proposed/pending_approval/returned_for_correction/
+    // approved/rejected already covered above; only its own in_progress and
+    // proposed states are new)
+    proposed: { label: 'Proposed', bg: '#E0E7FF', color: '#3730A3' },
+    in_progress: { label: 'In Progress', bg: '#DBEAFE', color: '#1E40AF' },
+
+    // Employee Request lifecycle (submitted/returned_for_correction/approved/
+    // rejected/completed/cancelled already covered above)
+    processing: { label: 'Processing', bg: '#FEF3C7', color: '#92400E' },
+
+    // Attendance
+    present: { label: 'Present', bg: '#DCFCE7', color: '#166534' },
+    absent: { label: 'Absent', bg: '#FEE2E2', color: '#991B1B' },
+    late: { label: 'Late', bg: '#FEF3C7', color: '#92400E' },
+    half_day: { label: 'Half Day', bg: '#DBEAFE', color: '#1E40AF' },
+    leave: { label: 'On Leave', bg: '#EDE9FE', color: '#5B21B6' },
+    holiday: { label: 'Holiday', bg: '#F1F5F9', color: '#475569' },
+
+    // Complaints (submitted/under_review/rejected already covered above)
+    investigating: { label: 'Investigating', bg: '#DBEAFE', color: '#1E40AF' },
+    responded: { label: 'Responded', bg: '#EDE9FE', color: '#5B21B6' },
+    resolved: { label: 'Resolved', bg: '#16A34A', color: '#FFFFFF' }
 };
 
 export const StatusBadge = ({ status }) => {

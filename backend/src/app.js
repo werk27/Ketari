@@ -22,7 +22,6 @@ const reportRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const adminRoutes = require('./routes/admin');
 const candidateRoutes = require('./routes/candidates');
-const interviewRoutes = require('./routes/interviews');
 const publicRoutes = require('./routes/public');
 const notificationRoutes = require('./routes/notifications');
 const employerRoutes = require('./routes/employers');
@@ -35,6 +34,7 @@ const employeeRoutes = require('./routes/employees');
 const leaveRoutes = require('./routes/leaves');
 const attendanceRoutes = require('./routes/attendance');
 const trainingRoutes = require('./routes/training');
+const trainingNeedRoutes = require('./routes/trainingNeeds');
 const complaintRoutes = require('./routes/complaints');
 const delegationRoutes = require('./routes/delegations');
 const requestRoutes = require('./routes/requests');
@@ -201,7 +201,15 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/candidates', candidateRoutes);
-app.use('/api/interviews', interviewRoutes);
+// Interviews are not a separate module in the active flow: scheduling and
+// recording an interview result happen directly on the Application (see
+// applicationController.scheduleInterview / updateApplicationStatus, mounted
+// under /api/applications). The old parallel /api/interviews module
+// (routes/interviews.js + controllers/interviewController.js) had zero
+// frontend callers and no other backend dependents, so it was removed as
+// confirmed dead/duplicate code. models/Interview.js is kept: two existing
+// maintenance scripts (removeInternships.js, migrateHrmTenancy.js) still
+// reference it for historical/legacy data cleanup.
 app.use('/api/public', publicRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/employers', employerRoutes);     // Employer / Organization Module
@@ -214,6 +222,7 @@ app.use('/api/employees', employeeRoutes);      // Employee Module
 app.use('/api/leaves', leaveRoutes);            // Leave Module
 app.use('/api/attendance', attendanceRoutes);   // Attendance Module
 app.use('/api/training', trainingRoutes);       // Training Module
+app.use('/api/training-needs', trainingNeedRoutes); // Training Need / personal interest bridge
 app.use('/api/complaints', complaintRoutes);    // Complaint Module
 app.use('/api/delegations', delegationRoutes);  // Delegation Module
 app.use('/api/requests', requestRoutes);        // Employee Request Module

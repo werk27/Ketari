@@ -2,6 +2,7 @@ const Delegation = require('../models/Delegation');
 const User = require('../models/User');
 const notificationService = require('../services/notificationService');
 const { capabilitiesFor, CAPABILITIES, ORG_ROLES, NON_DELEGABLE_CAPABILITIES } = require('../config/permissions');
+const { loadDepartmentHeadIndex, annotateAccount } = require('../services/roleDisplay');
 
 /**
  * Delegation of responsibility (spec §15).
@@ -188,9 +189,15 @@ exports.getDelegationCandidates = async (req, res) => {
             employer: req.employerId,
             status: 'active',
             _id: { $ne: req.user.id }
-        }).select('name email role').sort({ name: 1 });
+        }).select('name email role').sort({ name: 1 }).lean();
 
-        res.status(200).json({ success: true, data: colleagues });
+        // Same annotation as the Employee Directory: a colleague who heads a
+        // department is offered here as "Department Head", not a bare
+        // "employee", so the delegate picker matches their assigned role.
+        const headIndex = await loadDepartmentHeadIndex(req.employerId);
+        const annotated = colleagues.map(c => annotateAccount(c, headIndex));
+
+        res.status(200).json({ success: true, data: annotated });
     } catch (error) {
         console.error('Get Delegation Candidates Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -661,9 +668,19 @@ exports.getDelegations = async (req, res) => {
         })
             .populate('delegator', 'name email role')
             .populate('delegate', 'name email role')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
-        res.status(200).json({ success: true, data: delegations });
+        // Annotate both sides with Department Head status so the delegator
+        // and delegate are described the same way they are everywhere else.
+        const headIndex = await loadDepartmentHeadIndex(req.user.employer);
+        const annotated = delegations.map(d => ({
+            ...d,
+            delegator: annotateAccount(d.delegator, headIndex),
+            delegate: annotateAccount(d.delegate, headIndex)
+        }));
+
+        res.status(200).json({ success: true, data: annotated });
     } catch (error) {
         console.error('Get Delegations Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
@@ -683,9 +700,17 @@ exports.getOrganizationDelegations = async (req, res) => {
         const delegations = await Delegation.find(query)
             .populate('delegator', 'name email role')
             .populate('delegate', 'name email role')
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .lean();
 
-        res.status(200).json({ success: true, count: delegations.length, data: delegations });
+        const headIndex = await loadDepartmentHeadIndex(req.employerId);
+        const annotated = delegations.map(d => ({
+            ...d,
+            delegator: annotateAccount(d.delegator, headIndex),
+            delegate: annotateAccount(d.delegate, headIndex)
+        }));
+
+        res.status(200).json({ success: true, count: annotated.length, data: annotated });
     } catch (error) {
         console.error('Get Organization Delegations Error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });

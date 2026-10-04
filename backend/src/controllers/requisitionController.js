@@ -534,6 +534,15 @@ exports.returnRequisition = async (req, res) => {
             });
         }
 
+        // Separation of duties: an HR Expert who also happens to be the
+        // requester (e.g. a Department Head additionally holding the HR
+        // Expert role) must not be the only pair of eyes on their own
+        // requisition. Mirrors the identical check already enforced at the
+        // HR Manager decision step below.
+        if (requisition.requestedBy.toString() === req.user.id) {
+            return res.status(403).json({ success: false, message: 'You cannot process a requisition you raised yourself' });
+        }
+
         requisition.status = 'returned';
         requisition.returnReason = note.trim();
         requisition.processedBy = req.user.id;
@@ -638,6 +647,11 @@ exports.prepareRequisition = async (req, res) => {
                 success: false,
                 message: `Only a submitted requisition can be forwarded for approval (current status: ${requisition.status})`
             });
+        }
+
+        // Same separation-of-duties rule as returnRequisition above.
+        if (requisition.requestedBy.toString() === req.user.id) {
+            return res.status(403).json({ success: false, message: 'You cannot process a requisition you raised yourself' });
         }
 
         requisition.status = 'pending_approval';

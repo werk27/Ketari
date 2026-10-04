@@ -7,6 +7,7 @@ const {
     getJob,
     updateJob,
     submitJob,
+    withdrawJob,
     deleteJob,
     getMatchingCandidates,
     getEmployerJobs,
@@ -90,6 +91,11 @@ router.post('/:id/save', protect, can(CAPABILITIES.JOB_SEEK), toggleSaveJob);
 // @desc    Submit a draft vacancy for HR Manager approval
 // @access  Private (HR Expert)
 router.put('/:id/submit', protect, can(CAPABILITIES.VACANCY_SUBMIT), withEmployerScope, requireActiveEmployer, submitJob);
+
+// @route   PUT /api/jobs/:id/withdraw
+// @desc    Withdraw a vacancy pending HR Manager approval, back to draft
+// @access  Private (HR Expert who submitted it, or their active delegate)
+router.put('/:id/withdraw', protect, can(CAPABILITIES.VACANCY_SUBMIT), withEmployerScope, requireActiveEmployer, withdrawJob);
 
 // @route   PUT /api/jobs/:id/approve
 // @desc    Approve and publish a vacancy

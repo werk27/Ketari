@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { FaUsers, FaPlus, FaSearch, FaUserShield, FaUserCog } from 'react-icons/fa';
 import api, { describeApiError } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { resolveDisplayRole } from '../workspace/navigationConfig';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
 import {
     Card, SectionHeader, StatusBadge, LoadingState, EmptyState, ErrorState
@@ -34,7 +35,20 @@ const EMPTY_FORM = {
     }
 };
 
+// Employee.status options (used both as the fallback "Employment status" list
+// on the Add/Edit form and, extended below, as the directory's Status filter
+// list - do not add 'pending_approval'/'rejected' here, they are top-level
+// registration-workflow states, never a valid employmentInfo.employmentStatus
+// value).
 const EMPLOYEE_STATUS_OPTIONS = ['active', 'inactive', 'on_leave', 'suspended', 'terminated', 'resigned'];
+
+// 'pending_approval' and 'rejected' are the registration-workflow states an
+// HR-Expert-recorded employee passes through before an HR Manager approves
+// it (see employeeController.createEmployee/approveRegistration). Only the
+// directory's Status filter needs them - the top-level `status` field, not
+// the separate employmentInfo.employmentStatus above - so this stays a
+// distinct list rather than being folded into EMPLOYEE_STATUS_OPTIONS.
+const STATUS_FILTER_OPTIONS = ['pending_approval', 'active', 'rejected', ...EMPLOYEE_STATUS_OPTIONS.filter(s => s !== 'active')];
 
 const ASSIGNABLE_ROLES = [
     { value: 'employee', label: 'Employee (no special role)', hint: 'Standard employee self-service access only.' },
@@ -59,6 +73,7 @@ const EmployeeDirectory = () => {
     const [departmentFilter, setDepartmentFilter] = useState('');
     const [positionFilter, setPositionFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
+    const [roleFilter, setRoleFilter] = useState('');
 
     const [config, setConfig] = useState({ departments: [], positions: [], employmentStatus: [] });
 
@@ -84,8 +99,16 @@ const EmployeeDirectory = () => {
     const [terminateTarget, setTerminateTarget] = useState(null);
     const [terminating, setTerminating] = useState(false);
 
+    // Registration approval workflow (HR Manager approves/rejects what an
+    // HR Expert recorded - see employeeController.createEmployee).
+    const [registrationBusy, setRegistrationBusy] = useState(false);
+    const [rejectTarget, setRejectTarget] = useState(null); // employee _id, or null
+    const [rejectReason, setRejectReason] = useState('');
+    const [resubmitNote, setResubmitNote] = useState('');
+
     const canRecord = can('employee:record');
     const canManageTeam = can('org:team');
+    const canApproveRegistration = can('employee:delete');
 
     // ---------------------------------------------------------------- data
 
@@ -113,6 +136,7 @@ const EmployeeDirectory = () => {
             if (departmentFilter) params.department = departmentFilter;
             if (positionFilter) params.position = positionFilter;
             if (statusFilter) params.status = statusFilter;
+            if (roleFilter) params.role = roleFilter;
             const res = await api.get('/employees', { params });
             setEmployees(res.data.data || []);
         } catch (err) {
@@ -120,7 +144,7 @@ const EmployeeDirectory = () => {
         } finally {
             setLoading(false);
         }
-    }, [search, departmentFilter, positionFilter, statusFilter]);
+    }, [search, departmentFilter, positionFilter, statusFilter, roleFilter]);
 
     useEffect(() => { loadConfig(); }, [loadConfig]);
     useEffect(() => {
@@ -150,10 +174,13 @@ const EmployeeDirectory = () => {
     // Being a Department Head is not an account role (see the Role column) -
     // it's recorded as Configuration.departments[].manager and is what
     // authorises someone to raise Job Requisitions for that department (see
-    // requisitionController / authController's loadEmployment). A department
-    // has at most one head, but one person may head more than one department,
-    // so this is never reflected anywhere unless it's looked up here too.
+    // requisitionController / authController's loadEmployment). The API
+    // annotates every employee's linked account with `headOfDepartments`
+    // (services/roleDisplay.js) so this - and the Role column below - never
+    // has to re-derive it from a second, independently-loaded Configuration
+    // fetch that could drift from what the backend actually enforces.
     const headedDepartments = (person) => {
+        if (person?.user?.headOfDepartments) return person.user.headOfDepartments;
         const userId = person?.user?._id || person?.user;
         if (!userId) return [];
         return config.departments.filter(d => d.manager && String(d.manager) === String(userId));
@@ -216,8 +243,12 @@ const EmployeeDirectory = () => {
                 await api.put(`/employees/${editingId}`, form);
                 toast.success('Employee updated');
             } else {
+                // The backend message already reflects whether this record
+                // needed HR Manager approval (HR Expert) or was auto-approved
+                // (Employer) - see employeeController.createEmployee - so the
+                // toast never claims "recorded" when it is really pending.
                 const res = await api.post('/employees', form);
-                toast.success(`Employee recorded (${res.data.data?.employeeId || ''})`);
+                toast.success(res.data.message || `Employee recorded (${res.data.data?.employeeId || ''})`);
             }
             setShowForm(false);
             setForm(EMPTY_FORM);
@@ -247,6 +278,63 @@ const EmployeeDirectory = () => {
             toast.error(describeApiError(err, 'Could not update this employee'));
         } finally {
             setTerminating(false);
+        }
+    };
+
+    // ------------------------------------------------------- registration approval
+
+    const approveRegistration = async (employee) => {
+        setRegistrationBusy(true);
+        try {
+            const res = await api.put(`/employees/${employee._id}/registration/approve`);
+            toast.success(res.data.message || 'Employee registration approved');
+            load();
+            if (profileId === employee._id) openProfile(employee._id);
+        } catch (err) {
+            toast.error(describeApiError(err, 'Could not approve this registration'));
+        } finally {
+            setRegistrationBusy(false);
+        }
+    };
+
+    const openReject = (employee) => {
+        setRejectTarget(employee);
+        setRejectReason('');
+    };
+
+    const confirmReject = async () => {
+        if (!rejectTarget || !rejectReason.trim()) {
+            toast.error('Explain what the HR Expert needs to correct');
+            return;
+        }
+        setRegistrationBusy(true);
+        try {
+            const res = await api.put(`/employees/${rejectTarget._id}/registration/reject`, { reason: rejectReason.trim() });
+            toast.success(res.data.message || 'Employee registration rejected');
+            const rejectedId = rejectTarget._id;
+            setRejectTarget(null);
+            setRejectReason('');
+            load();
+            if (profileId === rejectedId) openProfile(rejectedId);
+        } catch (err) {
+            toast.error(describeApiError(err, 'Could not reject this registration'));
+        } finally {
+            setRegistrationBusy(false);
+        }
+    };
+
+    const resubmitRegistration = async (employee) => {
+        setRegistrationBusy(true);
+        try {
+            const res = await api.put(`/employees/${employee._id}/registration/resubmit`, { note: resubmitNote.trim() });
+            toast.success(res.data.message || 'Resubmitted for HR Manager approval');
+            setResubmitNote('');
+            load();
+            if (profileId === employee._id) openProfile(employee._id);
+        } catch (err) {
+            toast.error(describeApiError(err, 'Could not resubmit this registration'));
+        } finally {
+            setRegistrationBusy(false);
         }
     };
 
@@ -389,7 +477,7 @@ const EmployeeDirectory = () => {
                 />
 
                 <Row className="g-2 mb-3">
-                    <Col md={4}>
+                    <Col md={3}>
                         <div className="position-relative">
                             <FaSearch size={12} className="position-absolute text-muted"
                                       style={{ left: 12, top: '50%', transform: 'translateY(-50%)' }} />
@@ -401,13 +489,13 @@ const EmployeeDirectory = () => {
                             />
                         </div>
                     </Col>
-                    <Col md={3}>
+                    <Col md={2}>
                         <Form.Select size="sm" value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)}>
                             <option value="">All departments</option>
                             {config.departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
                         </Form.Select>
                     </Col>
-                    <Col md={3}>
+                    <Col md={2}>
                         <Form.Select size="sm" value={positionFilter} onChange={e => setPositionFilter(e.target.value)}>
                             <option value="">All positions</option>
                             {config.positions.map(p => <option key={p._id} value={p._id}>{p.title}</option>)}
@@ -416,7 +504,22 @@ const EmployeeDirectory = () => {
                     <Col md={2}>
                         <Form.Select size="sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                             <option value="">All statuses</option>
-                            {EMPLOYEE_STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                            {STATUS_FILTER_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                        </Form.Select>
+                    </Col>
+                    <Col md={3}>
+                        {/* "department_head" is a virtual filter, not a stored
+                            role - it matches the same assigned-standing
+                            annotation the Role column renders (see
+                            employeeController.getEmployees / roleDisplay.js),
+                            so filtering here always agrees with what the
+                            column shows. */}
+                        <Form.Select size="sm" value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
+                            <option value="">All roles</option>
+                            <option value="employee">Employee</option>
+                            <option value="hr_expert">HR Expert</option>
+                            <option value="hr_manager">HR Manager</option>
+                            <option value="department_head">Department Head</option>
                         </Form.Select>
                     </Col>
                 </Row>
@@ -424,8 +527,8 @@ const EmployeeDirectory = () => {
                 {employees.length === 0 ? (
                     <EmptyState
                         icon={FaUsers}
-                        title={search || departmentFilter || positionFilter || statusFilter ? 'No employees match these filters' : 'No employees recorded yet'}
-                        description={search || departmentFilter || positionFilter || statusFilter
+                        title={search || departmentFilter || positionFilter || statusFilter || roleFilter ? 'No employees match these filters' : 'No employees recorded yet'}
+                        description={search || departmentFilter || positionFilter || statusFilter || roleFilter
                             ? 'Try different search terms or clear the filters.'
                             : 'Record your first employee to start building the directory.'}
                         action={canRecord && !search && (
@@ -485,13 +588,38 @@ const EmployeeDirectory = () => {
                                             )}
                                         </td>
                                         <td style={{ fontSize: '0.8rem' }}>
-                                            {employee.user ? roleLabel(employee.user.role) : '—'}
+                                            {employee.user ? resolveDisplayRole(employee.user.role, employee.user.isDepartmentHead) : '—'}
                                         </td>
                                         <td className="text-end">
                                             <div className="d-flex gap-1 justify-content-end">
                                                 <Button size="sm" variant="outline-secondary" onClick={() => openProfile(employee._id)}>
                                                     View
                                                 </Button>
+                                                {/* Registration approval - HR Manager decides, HR Expert corrects and
+                                                    resubmits. Gated on the same capabilities the backend enforces
+                                                    (employee:delete / employee:record), so a button is never shown
+                                                    to someone the API would reject anyway. */}
+                                                {employee.status === 'pending_approval' && canApproveRegistration && (
+                                                    <>
+                                                        <Button size="sm" variant="outline-success" disabled={registrationBusy}
+                                                                onClick={() => approveRegistration(employee)}
+                                                                title="Approve this employee's registration">
+                                                            Approve
+                                                        </Button>
+                                                        <Button size="sm" variant="outline-danger" disabled={registrationBusy}
+                                                                onClick={() => openReject(employee)}
+                                                                title="Reject with a reason for the HR Expert to correct">
+                                                            Reject
+                                                        </Button>
+                                                    </>
+                                                )}
+                                                {employee.status === 'rejected' && canRecord && (
+                                                    <Button size="sm" variant="outline-warning"
+                                                            onClick={() => openProfile(employee._id)}
+                                                            title="Review the rejection reason, correct the record, then resubmit">
+                                                        Correct &amp; Resubmit
+                                                    </Button>
+                                                )}
                                                 {canManageTeam && (
                                                     employee.user ? (
                                                         <Button size="sm" variant="outline-primary"
@@ -677,14 +805,13 @@ const EmployeeDirectory = () => {
                                 <Row className="g-3">
                                     {[
                                         ['Employee number', profile.employeeId],
-                                        ['Status', profile.status],
                                         ['Department', departmentName(profile.employmentInfo?.department)],
                                         ['Position', positionTitle(profile.employmentInfo?.position)],
                                         ['Job title', profile.employmentInfo?.jobTitle],
                                         ['Hire date', profile.employmentInfo?.hireDate
                                             ? new Date(profile.employmentInfo.hireDate).toLocaleDateString() : null],
                                         ['Account', profile.user ? `${profile.user.email} (${profile.user.status})` : 'No account linked'],
-                                        ['Organizational role', profile.user ? roleLabel(profile.user.role) : '—'],
+                                        ['Organizational role', profile.user ? resolveDisplayRole(profile.user.role, profile.user.isDepartmentHead) : '—'],
                                         ['Department Head of', headedDepartments(profile).map(d => d.name).join(', ') || null]
                                     ].map(([label, value]) => (
                                         <Col md={6} key={label}>
@@ -695,7 +822,77 @@ const EmployeeDirectory = () => {
                                             <div className="text-dark" style={{ fontSize: '0.86rem' }}>{value || '—'}</div>
                                         </Col>
                                     ))}
+                                    <Col md={6}>
+                                        <div className="text-uppercase text-muted"
+                                             style={{ fontSize: '0.64rem', fontWeight: 700, letterSpacing: '.5px' }}>
+                                            Status
+                                        </div>
+                                        <div className="mt-1"><StatusBadge status={profile.status} /></div>
+                                    </Col>
                                 </Row>
+
+                                {/* Registration approval workflow - only shown while it is relevant
+                                    (pending or rejected). Once approved the record is simply an
+                                    active employee, same as one the Employer recorded directly. */}
+                                {profile.status === 'pending_approval' && (
+                                    <div className="alert alert-warning mt-3 mb-0" style={{ fontSize: '0.82rem' }}>
+                                        <div className="fw-semibold mb-1">Awaiting HR Manager approval</div>
+                                        <div>
+                                            Submitted by {profile.registration?.submittedBy?.name || 'an HR Expert'}
+                                            {profile.registration?.submittedAt
+                                                ? ` on ${new Date(profile.registration.submittedAt).toLocaleString()}` : ''}.
+                                            This employee is not yet officially active.
+                                        </div>
+                                        {canApproveRegistration ? (
+                                            <div className="d-flex gap-2 mt-2">
+                                                <Button size="sm" variant="success" disabled={registrationBusy}
+                                                        onClick={() => approveRegistration(profile)}>
+                                                    Approve
+                                                </Button>
+                                                <Button size="sm" variant="danger" disabled={registrationBusy}
+                                                        onClick={() => openReject(profile)}>
+                                                    Reject
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <div className="text-muted mt-1" style={{ fontSize: '0.78rem' }}>
+                                                Only an HR Manager - other than whoever submitted it - can approve or reject this registration.
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {profile.status === 'rejected' && (
+                                    <div className="alert alert-danger mt-3 mb-0" style={{ fontSize: '0.82rem' }}>
+                                        <div className="fw-semibold mb-1">Registration rejected</div>
+                                        <div>
+                                            {profile.registration?.reviewedBy?.name ? `${profile.registration.reviewedBy.name} rejected` : 'Rejected'} this
+                                            registration{profile.registration?.reviewedAt
+                                                ? ` on ${new Date(profile.registration.reviewedAt).toLocaleString()}` : ''}:
+                                        </div>
+                                        <div className="fst-italic mt-1">"{profile.registration?.rejectionReason}"</div>
+                                        {canRecord && (
+                                            <>
+                                                <Form.Group className="mt-2">
+                                                    <Form.Label style={{ fontSize: '0.76rem' }}>Note for the HR Manager (optional)</Form.Label>
+                                                    <Form.Control as="textarea" rows={2} size="sm" value={resubmitNote}
+                                                                  onChange={e => setResubmitNote(e.target.value)}
+                                                                  placeholder="What did you correct?" />
+                                                </Form.Group>
+                                                <div className="d-flex gap-2 mt-2">
+                                                    <Button size="sm" variant="outline-primary" onClick={() => openEdit(profile)}>
+                                                        Correct information
+                                                    </Button>
+                                                    <Button size="sm" variant="warning" disabled={registrationBusy}
+                                                            onClick={() => resubmitRegistration(profile)}>
+                                                        Resubmit for approval
+                                                    </Button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+
                                 {canRecord && (
                                     <div className="mt-4 d-flex gap-2">
                                         <Button size="sm" variant="outline-primary" onClick={() => openEdit(profile)}>Edit employee</Button>
@@ -995,6 +1192,32 @@ const EmployeeDirectory = () => {
                 onCancel={() => setTerminateTarget(null)}
                 onConfirm={confirmTerminate}
             />
+
+            {/* Reject a pending registration - a reason is mandatory so the HR
+                Expert who submitted it knows exactly what to correct. */}
+            <Modal show={!!rejectTarget} onHide={() => setRejectTarget(null)} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title style={{ fontSize: '1.05rem' }}>Reject employee registration</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+                        Explain what {rejectTarget ? fullName(rejectTarget) : 'this employee'}'s record needs corrected.
+                        The HR Expert who submitted it will see this reason and can resubmit.
+                    </p>
+                    <Form.Group>
+                        <Form.Label style={{ fontSize: '0.8rem' }}>Rejection reason (required)</Form.Label>
+                        <Form.Control as="textarea" rows={3} value={rejectReason}
+                                      onChange={e => setRejectReason(e.target.value)}
+                                      placeholder="e.g. Employment start date conflicts with the offer letter" />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="light" onClick={() => setRejectTarget(null)}>Cancel</Button>
+                    <Button variant="danger" disabled={registrationBusy || !rejectReason.trim()} onClick={confirmReject}>
+                        {registrationBusy ? 'Rejecting…' : 'Reject registration'}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </div>
     );
 };

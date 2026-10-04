@@ -102,7 +102,7 @@ const run = async () => {
         token: expert.token, body: { note: 'Verified and forwarded' }
     });
     record('HR Expert CAN forward leave for approval',
-        processed.status === 200 && processed.data?.data?.status === 'under_review');
+        processed.status === 200 && processed.data?.data?.status === 'pending_approval');
 
     const approved = await call('PUT', `/leaves/${leaveId}/status`, {
         token: manager.token, body: { status: 'approved' }

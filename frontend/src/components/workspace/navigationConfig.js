@@ -49,6 +49,7 @@ export const NAVIGATION = {
                     { to: '/hr-expert/leave', label: 'Leave', icon: FaCalendarAlt },
                     { to: '/hr-expert/requests', label: 'Employee Requests', icon: FaClipboardList },
                     { to: '/hr-expert/training', label: 'Training', icon: FaGraduationCap },
+                    { to: '/hr-expert/attendance', label: 'Attendance', icon: FaUserClock },
                     { to: '/hr-expert/complaints', label: 'Complaints', icon: FaComments },
                     { to: '/hr-expert/delegation', label: 'Delegation', icon: FaExchangeAlt }
                 ]
@@ -93,6 +94,7 @@ export const NAVIGATION = {
                     { to: '/hr-manager/candidates', label: 'Candidates', icon: FaUsers },
                     { to: '/hr-manager/employees', label: 'Employees', icon: FaUserFriends },
                     { to: '/hr-manager/onboarding', label: 'Onboarding', icon: FaUserCheck },
+                    { to: '/hr-manager/attendance', label: 'Attendance', icon: FaUserClock },
                     { to: '/hr-manager/complaints', label: 'Complaints', icon: FaComments },
                     { to: '/hr-manager/delegation', label: 'Delegation', icon: FaExchangeAlt }
                 ]
@@ -130,6 +132,7 @@ export const NAVIGATION = {
                 label: 'Employees',
                 items: [
                     { to: '/employer/employees', label: 'Employee Directory', icon: FaUsers },
+                    { to: '/employer/onboarding', label: 'Onboarding', icon: FaUserCheck },
                     { to: '/employer/leave', label: 'Leave', icon: FaCalendarAlt },
                     { to: '/employer/requests', label: 'Employee Requests', icon: FaClipboardList },
                     { to: '/employer/training', label: 'Training', icon: FaGraduationCap },
@@ -142,7 +145,8 @@ export const NAVIGATION = {
                 items: [
                     { to: '/employer/requisitions', label: 'Job Requisitions', icon: FaClipboardList },
                     { to: '/employer/vacancies', label: 'Vacancies', icon: FaBriefcase },
-                    { to: '/employer/applications', label: 'Applications', icon: FaFileAlt }
+                    { to: '/employer/applications', label: 'Applications', icon: FaFileAlt },
+                    { to: '/employer/reports', label: 'Recruitment Report', icon: FaChartBar }
                 ]
             }
         ]
@@ -251,6 +255,7 @@ const DEPARTMENT_HEAD_SECTION = {
         { to: '/employee/department/profile', label: 'My Department', icon: FaBuilding },
         { to: '/employee/department/employees', label: 'Department Employees', icon: FaUserFriends },
         { to: '/employee/requisitions', label: 'Job Requisitions', icon: FaClipboardList },
+        { to: '/employee/department/training-needs', label: 'Training Needs', icon: FaGraduationCap },
         { to: '/employee/recruitment', label: 'Recruitment Status', icon: FaClipboardCheck }
     ]
 };
@@ -311,6 +316,24 @@ export const ROLE_LABELS = {
 };
 
 /**
+ * The single label to show for an organization member's assigned role,
+ * anywhere more than one member is listed (directory, delegation, dropdowns,
+ * approvals, ...): their bare account role UNLESS they have additionally
+ * been assigned as a Department Head (Configuration.departments[].manager) -
+ * that is never a stored role, but it is a real assigned standing and must
+ * outrank the generic "Employee" label exactly like it outranks a generic
+ * position title in describeEmployment below, so a signed-in member and
+ * every list that mentions them agree.
+ *
+ * Reuse this everywhere instead of a local roleLabel/ROLE_LABELS copy - that
+ * duplication (one map per screen, several of which never learned about
+ * Department Head) is exactly how a real assigned role kept collapsing back
+ * to "Employee" in parts of the app.
+ */
+export const resolveDisplayRole = (role, isDepartmentHead) =>
+    (isDepartmentHead ? 'Department Head' : (ROLE_LABELS[role] || role || ''));
+
+/**
  * How a signed-in member should be introduced inside their organization.
  *
  * `role` only decides which workspace someone gets, so on its own it presented
@@ -337,7 +360,7 @@ export const describeEmployment = (user) => {
     const department = isDepartmentHead ? '' : (employment?.departmentName || '');
 
     return {
-        roleLabel,
+        roleLabel: resolveDisplayRole(user?.role, isDepartmentHead),
         title,
         department,
         isDepartmentHead,

@@ -66,6 +66,28 @@ export const AuthProvider = ({ children }) => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Role/Department Head standing is never cached server-side - the backend
+    // recomputes it from Configuration on every request (see
+    // backend/src/services/departmentScope.js), so authorization itself never
+    // goes stale. What CAN go stale is this tab's own copy of /auth/me,
+    // e.g. an Employer assigns/removes a department head while that person
+    // already has the app open elsewhere. Rather than forcing a logout/login
+    // to see the change, silently re-fetch the profile whenever the tab
+    // regains focus, throttled so switching tabs quickly cannot spam the API.
+    const lastFocusRefresh = useRef(0);
+    useEffect(() => {
+        const handleFocus = () => {
+            if (!hydratedToken.current) return;
+            const now = Date.now();
+            if (now - lastFocusRefresh.current < 30000) return;
+            lastFocusRefresh.current = now;
+            loadUser(hydratedToken.current);
+        };
+        window.addEventListener('focus', handleFocus);
+        return () => window.removeEventListener('focus', handleFocus);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const loadUser = async (activeToken, attempt = 0) => {
         try {
             const response = await api.get('/auth/me');

@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
  * break-year, resignation, transfer, termination and general requests.
  *
  * Workflow (see spec §12 / §32):
- *   submitted -> processing (HR Expert) -> approved | rejected (HR Manager) -> completed
+ *   submitted -> pending_approval (HR Expert) -> approved | rejected (HR Manager) -> completed
  *   with a detour: the HR Expert may send a submitted request back to the
  *   requester (returned_for_correction) who fixes and resubmits it - the
  *   Expert's only corrective action; terminal rejection stays with the
@@ -15,6 +15,11 @@ const mongoose = require('mongoose');
  *
  * Separation of duties is enforced in the controller: the person who processes
  * a request may never be the person who approves it.
+ *
+ * 'processing' is kept in the enum for records forwarded before this status
+ * was renamed to 'pending_approval' - the same name Leave, Job Requisition
+ * and Training use for the identical stage (see employeeRequestController's
+ * AWAITING_MANAGER_STATUSES, which accepts both).
  */
 const EmployeeRequestSchema = new mongoose.Schema({
     employee: {
@@ -67,7 +72,7 @@ const EmployeeRequestSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ['submitted', 'returned_for_correction', 'processing', 'approved', 'rejected', 'completed', 'cancelled'],
+        enum: ['submitted', 'returned_for_correction', 'processing', 'pending_approval', 'approved', 'rejected', 'completed', 'cancelled'],
         default: 'submitted',
         index: true
     },

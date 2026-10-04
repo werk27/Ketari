@@ -10,7 +10,7 @@ const { CAPABILITIES, userCan } = require('../config/permissions');
  *
  * Workflow: employee submits (pending) -> HR Expert is the validation gate,
  * which returns it for correction, rejects it outright, or forwards it
- * (under_review) -> HR Manager makes the final approve/reject decision.
+ * (pending_approval) -> HR Manager makes the final approve/reject decision.
  * A request may only reach the HR Manager once an HR Expert has forwarded
  * it - HR Manager can never decide on a still-`pending` request.
  *
@@ -22,7 +22,13 @@ const { CAPABILITIES, userCan } = require('../config/permissions');
 // dates until they are decided one way or the other. A request returned for
 // correction is still reserved: the employee is expected to fix and
 // resubmit it, not lose its place while doing so.
-const PENDING_STATUSES = ['pending', 'under_review', 'returned_for_correction'];
+//
+// 'under_review' is the pre-rename value for "HR Expert forwarded, awaiting
+// HR Manager"; 'pending_approval' is the current one (same name Job
+// Requisition and Training use for the identical stage). Both are accepted
+// everywhere so already-forwarded requests never get invalidated.
+const AWAITING_MANAGER_STATUSES = ['under_review', 'pending_approval'];
+const PENDING_STATUSES = ['pending', ...AWAITING_MANAGER_STATUSES, 'returned_for_correction'];
 // Anything that could still occupy the calendar - used for overlap detection.
 const OVERLAP_STATUSES = [...PENDING_STATUSES, 'approved'];
 
@@ -416,7 +422,14 @@ exports.createLeave = async (req, res) => {
 exports.getLeaves = async (req, res) => {
     try {
         const query = { employer: req.employerId };
-        if (req.query.status) query.status = req.query.status;
+        if (req.query.status) {
+            // Accept either name for the "forwarded, awaiting HR Manager"
+            // stage so a caller filtering by the old or new name catches
+            // every matching record regardless of when it was forwarded.
+            query.status = AWAITING_MANAGER_STATUSES.includes(req.query.status)
+                ? { $in: AWAITING_MANAGER_STATUSES }
+                : req.query.status;
+        }
 
         const leaves = await Leave.find(query)
             .populate({ path: 'employee', select: 'employeeId personalInfo user' })
@@ -569,7 +582,7 @@ exports.processLeave = async (req, res) => {
             });
         }
 
-        leave.status = 'under_review';
+        leave.status = 'pending_approval';
         leave.processedBy = req.user.id;
         leave.processedAt = new Date();
         if (req.body.note) leave.processingNote = req.body.note;
@@ -775,7 +788,7 @@ exports.updateLeaveStatus = async (req, res) => {
         // HR Manager once it has been reviewed and forwarded. This is the
         // rule that prevents "Employee -> HR Manager" bypassing HR Expert
         // entirely (spec §17/§19/§20).
-        if (leave.status !== 'under_review') {
+        if (!AWAITING_MANAGER_STATUSES.includes(leave.status)) {
             return res.status(400).json({
                 success: false,
                 message: leave.status === 'pending'

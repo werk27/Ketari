@@ -44,9 +44,11 @@ const ApplyJob = () => {
             setJob(jobRes.data.job);
             
             if (user) {
-                // Check if already applied
+                // Only a still-ACTIVE application counts as "already applied" -
+                // a withdrawn one (the candidate's own choice) no longer blocks
+                // reapplying, mirroring applicationController.applyJob.
                 const appsRes = await api.get('/applications/me');
-                const applied = appsRes.data.applications.some(app => app.job._id === jobId);
+                const applied = appsRes.data.applications.some(app => app.job._id === jobId && app.status !== 'withdrawn');
                 setHasApplied(applied);
 
                 // Setup resumes

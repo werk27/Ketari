@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from 'react-bootstrap';
 import { toast } from 'react-toastify';
-import { FaBriefcase, FaPlusCircle, FaPaperPlane, FaEdit, FaUsers, FaRobot, FaTrash, FaLock } from 'react-icons/fa';
+import { FaBriefcase, FaPlusCircle, FaPaperPlane, FaEdit, FaUsers, FaRobot, FaTrash, FaLock, FaUndo } from 'react-icons/fa';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import ConfirmDeleteModal from '../common/ConfirmDeleteModal';
@@ -71,6 +71,19 @@ const VacancyList = () => {
             setJobs(prev => prev.map(item => (item._id === job._id ? { ...item, ...res.data.job } : item)));
         } catch (err) {
             toast.error(err.response?.data?.message || 'Could not submit vacancy');
+        } finally {
+            setBusyId(null);
+        }
+    };
+
+    const withdraw = async (job) => {
+        setBusyId(job._id);
+        try {
+            const res = await api.put(`/jobs/${job._id}/withdraw`);
+            toast.success('Vacancy withdrawn - it is back in your drafts');
+            setJobs(prev => prev.map(item => (item._id === job._id ? { ...item, ...res.data.job } : item)));
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not withdraw vacancy');
         } finally {
             setBusyId(null);
         }
@@ -181,6 +194,7 @@ const VacancyList = () => {
                                 const isOwnWork = isExpert && OWN_WORK_STATUSES.includes(job.status);
                                 const canEdit = isOwnWork;
                                 const canSubmit = isOwnWork;
+                                const canWithdraw = isExpert && job.status === 'pending_approval';
                                 const canDelete = isOwnWork && (job.applications?.length || 0) === 0;
                                 const isLive = ['published', 'approved', 'open'].includes(job.status);
 
@@ -224,6 +238,13 @@ const VacancyList = () => {
                                                             className="d-flex align-items-center gap-1"
                                                             onClick={() => submitForApproval(job)}>
                                                         <FaPaperPlane size={10} /> Submit
+                                                    </Button>
+                                                )}
+                                                {canWithdraw && (
+                                                    <Button size="sm" variant="outline-warning" disabled={busyId === job._id}
+                                                            className="d-flex align-items-center gap-1"
+                                                            onClick={() => withdraw(job)}>
+                                                        <FaUndo size={10} /> Withdraw
                                                     </Button>
                                                 )}
                                                 {canEdit && (

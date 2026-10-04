@@ -17,6 +17,15 @@ import CandidateProfileModal from '../workspace/CandidateProfileModal';
  *
  * Approving with the "Hire" outcome is also what triggers the recruitment ->
  * employee bridge on the server, creating the employee record for onboarding.
+ *
+ * Interview result connection: the active flow does not use a separate
+ * Interview document. scheduleInterview() and updateApplicationStatus()
+ * write interviewDate/interviewLocation and a result note straight onto the
+ * Application (statusHistory), and getPendingDecisions() already returns
+ * that data populated. "View Candidate" below opens CandidateProfileModal,
+ * which renders it (interview date/location + full status history/notes)
+ * so the manager sees the interview outcome before deciding - no extra
+ * plumbing needed here.
  */
 
 // Outcomes the manager may authorise, in escalating order of commitment.

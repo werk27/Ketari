@@ -4,12 +4,28 @@ const Employer = require('../models/Employer');
 const User = require('../models/User');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
+const Employee = require('../models/Employee');
 const { HR_ROLES, EMPLOYER_MANAGEABLE_ROLES } = require('../config/permissions');
 const { PRIVATE_PATHS, toPublicPath, toAbsolutePath } = require('../config/paths');
 const notificationService = require('../services/notificationService');
 const emailService = require('../services/emailService');
+const { nextEmployeeId } = require('../services/onboardingService');
 
 const PUBLIC_STATUSES = ['published', 'approved', 'open'];
+
+/** Split a single "name" field into the Employee record's separate name parts.
+ *  Mirrors onboardingService.splitName - this form only ever collects one
+ *  name field, but Employee.personalInfo requires firstName AND lastName. */
+const splitName = (fullName = '') => {
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return { firstName: 'Unknown', middleName: '', lastName: 'Unknown' };
+    if (parts.length === 1) return { firstName: parts[0], middleName: '', lastName: parts[0] };
+    return {
+        firstName: parts[0],
+        middleName: parts.slice(1, -1).join(' '),
+        lastName: parts[parts.length - 1]
+    };
+};
 
 // @desc    Get the caller's own organization profile
 // @route   GET /api/employers/me
@@ -116,6 +132,18 @@ exports.getTeam = async (req, res) => {
 // @desc    Add an HR team member to the organization
 // @route   POST /api/employers/me/team
 // @access  Private (Employer owner)
+//
+// A role must only ever be granted to a User account already linked to an
+// Employee record (see employeeController.js's module comment and
+// assignEmployeeRole) - this used to create the User with a role directly
+// and nothing else, leaving them invisible in the Employee Directory yet
+// fully privileged, and completely bypassing the employee registration/
+// approval workflow (employeeController.createEmployee). It now creates the
+// same linked Employee record that path would, so this is just a faster
+// on-ramp to the identical end state rather than a separate, weaker one.
+// The Employer creating their own team is the same "organization has no HR
+// staff yet" bootstrap case createEmployee already auto-approves, so this
+// Employee record is active immediately, never pending_approval.
 exports.addTeamMember = async (req, res) => {
     try {
         const { name, email, password, role, department, jobTitle } = req.body;
@@ -156,6 +184,30 @@ exports.addTeamMember = async (req, res) => {
             jobTitle: jobTitle || ''
         });
 
+        const { firstName, middleName, lastName } = splitName(name);
+        const employeeId = await nextEmployeeId(req.employerId);
+        const employee = await Employee.create({
+            employer: req.employerId,
+            user: member._id,
+            employeeId,
+            personalInfo: { firstName, middleName, lastName },
+            contactInfo: { email: normalizedEmail },
+            employmentInfo: { jobTitle: jobTitle || '', employmentStatus: 'active', hireDate: new Date() },
+            status: 'active',
+            registration: {
+                submittedBy: req.user.id,
+                submittedAt: new Date(),
+                reviewedBy: req.user.id,
+                reviewedAt: new Date(),
+                history: [{
+                    status: 'active',
+                    changedBy: req.user.id,
+                    changedAt: new Date(),
+                    note: 'Recorded via Add HR Team Member (organization owner - auto-approved)'
+                }]
+            }
+        });
+
         res.status(201).json({
             success: true,
             member: {
@@ -166,7 +218,8 @@ exports.addTeamMember = async (req, res) => {
                 status: member.status,
                 department: member.department,
                 jobTitle: member.jobTitle
-            }
+            },
+            employeeId: employee.employeeId
         });
     } catch (error) {
         console.error(error);
@@ -196,6 +249,20 @@ exports.updateTeamMember = async (req, res) => {
                 return res.status(400).json({
                     success: false,
                     message: `Role must be one of: ${EMPLOYER_MANAGEABLE_ROLES.join(', ')}`
+                });
+            }
+            // A role may only ever be granted to an account already linked to
+            // an Employee record (see addTeamMember above and
+            // employeeController.assignEmployeeRole) - without this check a
+            // role could still be handed to an orphan account through this
+            // endpoint even though the creation path above no longer allows
+            // one to exist. Changing status/department/jobTitle never touches
+            // the role, so that keeps working exactly as before regardless.
+            const hasEmployeeRecord = await Employee.exists({ user: member._id, employer: req.employerId });
+            if (!hasEmployeeRecord) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'This account has no linked Employee record yet. Record them in the Employee Directory first, then assign a role there.'
                 });
             }
             member.role = role;

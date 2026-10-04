@@ -24,7 +24,7 @@ const NotificationSchema = new mongoose.Schema({
             'requisition_approved', 'requisition_rejected', 'requisition_job_created',
             // HR operations
             'leave_request', 'leave_returned', 'leave_decision', 'request_submitted', 'request_returned', 'request_decision',
-            'training_assigned', 'training_decision',
+            'training_assigned', 'training_returned', 'training_decision',
             'delegation_assigned', 'delegation_request', 'delegation_update',
             'complaint_update', 'document_expiring',
             // Platform
